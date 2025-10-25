@@ -268,6 +268,12 @@
             direction: rtl;
             text-align: left;
             max-height: 1.5rem;
+            cursor: pointer;
+            transition: direction 0.3s;
+        }
+
+        .path-value:hover {
+            direction: ltr;
         }
     </style>
 </head>
@@ -328,7 +334,7 @@
                     <h3>Location</h3>
                     <div class="info-row">
                         <span class="info-label">Full Path:</span>
-                        <span class="info-value path-value">{{ file.path }}</span>
+                        <span class="info-value path-value" title="{{ file.path }}">{{ file.path }}</span>
                     </div>
                 </div>
             </div>
