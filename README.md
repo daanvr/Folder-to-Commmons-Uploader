@@ -70,7 +70,7 @@ source venv/bin/activate && python app.py
 venv\Scripts\activate.bat && python app.py
 ```
 
-Then open your browser to: `http://localhost:5000`
+Then open your browser to: `http://localhost:5001`
 
 The web interface shows:
 - List of all detected files
