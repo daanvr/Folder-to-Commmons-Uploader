@@ -159,6 +159,34 @@
         .settings-link:hover {
             background: rgba(255,255,255,0.3);
         }
+
+        .auto-refresh-indicator {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            background: #4CAF50;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -207,5 +235,34 @@
         </div>
         {% endif %}
     </div>
+
+    <div class="auto-refresh-indicator">
+        <div class="refresh-dot"></div>
+        <span>Auto-refresh active</span>
+    </div>
+
+    <script>
+        let lastFileCount = {{ total_files }};
+        let autoRefreshEnabled = true;
+
+        // Check for new files every 3 seconds
+        setInterval(() => {
+            if (!autoRefreshEnabled) return;
+
+            fetch('/api/files')
+                .then(response => response.json())
+                .then(files => {
+                    if (files.length !== lastFileCount) {
+                        console.log(`File count changed: ${lastFileCount} -> ${files.length}`);
+                        lastFileCount = files.length;
+                        // Reload the page to show new files
+                        window.location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking for new files:', error);
+                });
+        }, 3000);
+    </script>
 </body>
 </html>
