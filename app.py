@@ -40,8 +40,8 @@ def extract_category_from_path(file_path, watch_folder):
             # Get the immediate parent directory name
             parent_dir = relative_path.parts[0]
 
-            # Check if it starts with 'category_'
-            if parent_dir.startswith('category_'):
+            # Check if it starts with 'category_' (case-insensitive)
+            if parent_dir.lower().startswith('category_'):
                 # Extract category name (everything after 'category_')
                 category_name = parent_dir[9:]  # len('category_') = 9
                 return category_name if category_name else None
