@@ -37,7 +37,6 @@ from PIL import Image
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from dotenv import load_dotenv
 
 # ---- watchdog: use polling on Windows to be robust ----
 if os.name == "nt":
@@ -55,13 +54,28 @@ except Exception as e:
     check_file_on_commons = None  # type: ignore
     build_checker_session = None  # type: ignore
 
-# Load environment (.env) for Commons upload credentials
-load_dotenv()
-COMMONS_USERNAME = os.getenv("COMMONS_USERNAME", "").strip()
-COMMONS_PASSWORD = os.getenv("COMMONS_PASSWORD", "").strip()
+# ---- dotenv: robust, on-demand loading ----
+from dotenv import load_dotenv, find_dotenv
+
+def get_commons_creds() -> tuple[str, str, str]:
+    """
+    Load .env from the repo root (or nearest parent) every time.
+    Returns (username, password, user_agent).
+    """
+    dotenv_path = find_dotenv(usecwd=True)
+    # You can uncomment the next line to see where it loads from:
+    # print(f".env found: {dotenv_path or '(none)'}")
+    load_dotenv(dotenv_path=dotenv_path, override=False)
+
+    username = os.getenv("COMMONS_USERNAME", "").strip()
+    password = os.getenv("COMMONS_PASSWORD", "").strip()
+    # Optional override for UA
+    user_agent_from_env = (os.getenv("COMMONS_USER_AGENT", "") or "").strip()
+    return username, password, user_agent_from_env
+
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-USER_AGENT = "KB Folder-to-Commons Uploader (App UI)"
+DEFAULT_USER_AGENT = "KB Folder-to-Commons Uploader (App UI)"
 TIMEOUT_SECS = 25
 RETRIES_TOTAL = 5
 RETRIES_BACKOFF = 0.6
@@ -74,7 +88,7 @@ app.secret_key = 'dev-secret-key-change-in-production'
 # Utilities
 # ========================
 
-def build_requests_session() -> requests.Session:
+def build_requests_session(user_agent: str | None = None) -> requests.Session:
     s = requests.Session()
     retry = Retry(
         total=RETRIES_TOTAL,
@@ -87,7 +101,8 @@ def build_requests_session() -> requests.Session:
         raise_on_status=False,
     )
     s.mount("https://", HTTPAdapter(max_retries=retry))
-    s.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
+    ua = (user_agent or DEFAULT_USER_AGENT).strip()
+    s.headers.update({"User-Agent": ua, "Accept": "application/json"})
     return s
 
 
@@ -97,6 +112,7 @@ def resolve_ref_to_path(ref: str, settings: dict) -> Path:
       - a bare filename like '20240409_173917.jpg' (resolved under watch_folder), or
       - an absolute path like 'D:\\...\\20240409_173917.jpg' or '/Users/.../file.jpg'.
     """
+    # Windows absolute path like C:\ or D:\
     is_win_abs = bool(re.match(r"^[A-Za-z]:[\\/]", ref))
     p = Path(ref)
     if p.is_absolute() or is_win_abs:
@@ -195,13 +211,21 @@ def commons_login_and_get_csrf(session: requests.Session, username: str, passwor
     return r3.json()["query"]["tokens"]["csrftoken"]
 
 
-def upload_to_commons(local_path: Path, target_filename: str, category_slug: str, settings: Dict[str, Any]) -> Dict[str, Any]:
+def upload_to_commons(
+    local_path: Path,
+    target_filename: str,
+    category_slug: str,
+    settings: dict,
+    username: str,
+    password: str,
+    user_agent: str,
+) -> Dict[str, Any]:
     """Upload file to Commons with initial wikitext that includes Category:<slug>."""
-    if not COMMONS_USERNAME or not COMMONS_PASSWORD:
+    if not username or not password:
         raise RuntimeError("Missing COMMONS_USERNAME/COMMONS_PASSWORD in .env")
 
-    session = build_requests_session()
-    csrf = commons_login_and_get_csrf(session, COMMONS_USERNAME, COMMONS_PASSWORD)
+    session = build_requests_session(user_agent or DEFAULT_USER_AGENT)
+    csrf = commons_login_and_get_csrf(session, username, password)
 
     with local_path.open("rb") as f:
         files = {"file": (target_filename, f, "application/octet-stream")}
@@ -468,7 +492,7 @@ def get_file_info(file_path: str) -> Optional[Dict[str, Any]]:
         'size': st.st_size,
         'size_mb': round(st.st_size / (1024 * 1024), 2),
         'created': datetime.fromtimestamp(st.st_ctime).strftime('%Y-%m-%d %H:%M:%S'),
-        'modified': datetime.fromtimestamp(st.mtime).strftime('%Y-%m-%d %H:%M:%S') if hasattr(st, "mtime") else datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+        'modified': datetime.fromtimestamp(getattr(st, "st_mtime", st.st_mtime)).strftime('%Y-%m-%d %H:%M:%S'),
         'exists': True,
         'status': 'Detected'
     }
@@ -501,6 +525,11 @@ def index():
         except Exception:
             info['relative_path'] = info['name']
 
+        # Derive category from parent folder if it starts with Category_
+        parent_name = Path(info['path']).parent.name
+        if parent_name.lower().startswith("category_"):
+            info['category'] = slug_from_category_folder(parent_name)
+
         # pre-built URLs so templates don't need to know param names
         info['urls'] = {
             "detail": url_for('file_detail', ref=info['path']),
@@ -526,15 +555,17 @@ def index():
         files_info.append(info)
 
     files_info.sort(key=lambda x: x['created'], reverse=True)
-    can_upload = bool(COMMONS_USERNAME and COMMONS_PASSWORD)
+
+    # Fresh creds -> enable/disable upload UI
+    u, p, _ua = get_commons_creds()
+    can_upload = bool(u and p)
 
     return render_template(
         'index.html',
         files=files_info,
         total_files=len(files_info),
         settings=settings,
-        upload_enabled=can_upload,
-        commons_username=("set" if COMMONS_USERNAME else "missing")
+        upload_enabled=can_upload
     )
 
 
@@ -547,6 +578,11 @@ def file_detail(ref: str):
     info = get_file_info(str(p))
     if not info:
         return "File not found", 404
+
+    # Derive category display (optional)
+    parent_name = p.parent.name
+    if parent_name.lower().startswith("category_"):
+        info['category'] = slug_from_category_folder(parent_name)
 
     tracker = FileTracker(Path(settings['processed_files_db']))
     rec = tracker.get_file_record(str(p))
@@ -571,9 +607,11 @@ def file_detail(ref: str):
         "image": url_for('serve_image', ref=str(p)),
     }
 
-    exif = extract_exif_safe(str(p))
-    can_upload = bool(COMMONS_USERNAME and COMMONS_PASSWORD)
+    # Fresh creds control upload UI
+    u, pword, _ua = get_commons_creds()
+    can_upload = bool(u and pword)
 
+    exif = extract_exif_safe(str(p))
     return render_template('file_detail.html', file=info, exif=exif, settings=settings, upload_enabled=can_upload)
 
 
@@ -606,6 +644,10 @@ def api_files():
             "thumb": url_for('serve_thumbnail', ref=info['path']),
             "image": url_for('serve_image', ref=info['path']),
         }
+        # Optional category field for UI/API clients
+        parent_name = Path(info['path']).parent.name
+        if parent_name.lower().startswith("category_"):
+            info['category'] = slug_from_category_folder(parent_name)
         out.append(info)
     return jsonify(out)
 
@@ -694,8 +736,11 @@ def api_upload():
     if not category_slug:
         category_slug = slug_from_category_folder(p.parent.name)
 
+    # Load creds fresh each request
+    username, password, user_agent = get_commons_creds()
+
     try:
-        result = upload_to_commons(p, target, category_slug, settings)
+        result = upload_to_commons(p, target, category_slug, settings, username, password, user_agent)
         if result.get("ok"):
             tracker = FileTracker(Path(settings['processed_files_db']))
             tracker.update_commons_check(str(p), {
@@ -737,7 +782,7 @@ def settings_view():
         flash('Settings saved.', 'success')
         return redirect(url_for('settings_view'))
 
-    return render_template('settings.html', settings=load_settings(), upload_enabled=bool(COMMONS_USERNAME and COMMONS_PASSWORD))
+    return render_template('settings.html', settings=load_settings(), upload_enabled=bool(get_commons_creds()[0] and get_commons_creds()[1]))
 
 
 # ========================
@@ -773,12 +818,12 @@ def extract_exif_safe(file_path: str) -> Dict[str, Any]:
 # Main
 # ========================
 
-def start_monitor_thread():
+def start_monitoring_thread():
     t = threading.Thread(target=start_monitoring, daemon=True)
     t.start()
 
 if __name__ == '__main__':
     # Start file monitoring + background checker
-    start_monitor_thread()
+    start_monitoring_thread()
     # Start Flask app (stat reloader avoids watchdog reloader issues on Windows)
     app.run(debug=True, host='0.0.0.0', port=5001, use_reloader=True, reloader_type="stat")

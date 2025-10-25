@@ -1,318 +1,142 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ file.name }} - File Details</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; }
-        .image-header { position: relative; background: #000; cursor: pointer; }
-        .image-header img { width: 100%; height: auto; display: block; }
-        .image-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.3)); pointer-events: none; }
-        .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; cursor: zoom-out; }
-        .lightbox.active { display: flex; align-items: center; justify-content: center; }
-        .lightbox img { max-width: 95%; max-height: 95%; object-fit: contain; cursor: zoom-in; transition: transform 0.1s ease-out; }
-        .lightbox img.zoomed { max-width: none; max-height: none; cursor: grab; }
-        .lightbox img.zoomed.dragging { cursor: grabbing; }
-        .lightbox-close { position: absolute; top: 2rem; right: 2rem; color: white; font-size: 3rem; cursor: pointer; background: rgba(0,0,0,0.5); width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; transition: background 0.2s; }
-        .lightbox-close:hover { background: rgba(0,0,0,0.8); }
-        .header-nav { position: absolute; top: 0; left: 0; right: 0; padding: 2rem; display: flex; justify-content: space-between; align-items: flex-start; z-index: 10; }
-        .back-link, .settings-link { color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 8px; background: rgba(0,0,0,0.3); backdrop-filter: blur(10px); transition: background 0.2s; font-size: 0.95rem; }
-        .back-link:hover, .settings-link:hover { background: rgba(0,0,0,0.5); }
-        .file-title { position: absolute; bottom: 2rem; left: 2rem; z-index: 10; color: white; font-size: 2rem; font-weight: 600; text-shadow: 0 2px 10px rgba(0,0,0,0.5); max-width: 70%; word-break: break-word; }
-        .tabs { background: white; border-bottom: 2px solid #e0e0e0; display: flex; justify-content: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .tab { padding: 1rem 2rem; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; font-weight: 500; color: #666; }
-        .tab:hover { color: #667eea; background: #f9f9f9; }
-        .tab.active { color: #667eea; border-bottom-color: #667eea; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
-        .info-card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .info-card h3 { font-size: 1.1rem; color: #667eea; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f0f0f0; }
-        .info-row { display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #f5f5f5; }
-        .info-row:last-child { border-bottom: none; }
-        .info-label { font-weight: 600; color: #666; }
-        .info-value { color: #333; text-align: right; word-break: break-word; }
-        .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500; background: #4CAF50; color: white; }
-        .status-badge.not-on-commons { background: #4CAF50; }
-        .status-badge.exact-match { background: #f44336; }
-        .status-badge.scaled-variant { background: #FF9800; }
-        .status-badge.exists-different { background: #FF9800; }
-        .status-badge.pending { background: #9E9E9E; }
-        .status-badge.error { background: #f44336; }
-        .commons-match { padding: 0.75rem; margin: 0.5rem 0; background: #f9f9f9; border-left: 3px solid #667eea; border-radius: 4px; }
-        .commons-match a { color: #667eea; text-decoration: none; word-break: break-all; }
-        .commons-match a:hover { text-decoration: underline; }
-        .commons-match-type { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; background: #e8eaf6; color: #667eea; margin-top: 0.25rem; }
-        .sha1-hash { font-family: 'Courier New', monospace; font-size: 0.85rem; background: #f5f5f5; padding: 0.25rem 0.5rem; border-radius: 4px; word-break: break-all; }
-        .exif-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
-        .exif-item { padding: 1rem; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .exif-key { font-weight: 600; color: #667eea; font-size: 0.9rem; margin-bottom: 0.25rem; }
-        .exif-value { color: #333; font-size: 0.95rem; word-break: break-word; }
-        .path-value { overflow: hidden; white-space: nowrap; direction: rtl; text-align: left; max-height: 1.5rem; cursor: pointer; transition: direction 0.3s; }
-        .path-value:hover { direction: ltr; }
-        .recheck-button { background: #667eea; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background 0.2s; }
-        .recheck-button:hover { background: #5568d3; }
-        .recheck-button:disabled { background: #ccc; cursor: not-allowed; }
-        .recheck-button.loading { position: relative; color: transparent; }
-        .recheck-button.loading::after { content: "⏳ Checking..."; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; }
-    </style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{{ file.name }} - Details</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:#f5f5f5;color:#333}
+    .hero{position:relative;background:#000}
+    .hero img{width:100%;height:auto;display:block}
+    .nav{position:absolute;top:1rem;left:1rem;right:1rem;display:flex;justify-content:space-between}
+    .nav a{color:#fff;text-decoration:none;background:rgba(0,0,0,.35);padding:.45rem .75rem;border-radius:8px}
+    .title{position:absolute;left:1rem;bottom:1rem;color:#fff;font-size:1.75rem;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+    .container{max-width:1100px;margin:1.25rem auto;padding:0 1rem}
+    .grid{display:grid;grid-template-columns: 1fr 1fr; gap:1rem}
+    @media (max-width: 900px){ .grid{grid-template-columns: 1fr} }
+    .card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);padding:1rem}
+    .row{display:flex;justify-content:space-between;margin:.35rem 0}
+    .label{color:#666;font-weight:600}
+    .badge{display:inline-block;padding:.2rem .55rem;border-radius:999px;font-size:.8rem;color:#fff}
+    .badge.ok{background:#2e7d32}.badge.pending{background:#757575}.badge.dup{background:#d32f2f}.badge.warn{background:#ef6c00}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#f3f4f6; padding:.2rem .35rem; border-radius:4px}
+    .upload-panel { margin-top:.5rem; background:#f9fafc; border:1px solid #e6e8f2; border-radius:10px; padding:.75rem; }
+    .upload-row { display:flex; flex-direction:column; gap:.35rem; margin:.35rem 0; }
+    .upload-row input[type="text"] { padding:.5rem .6rem; border:2px solid #e5e7eb; border-radius:8px; font-size:.95rem; }
+    .btn { border:none; padding:.55rem .9rem; border-radius:8px; font-weight:600; cursor:pointer; }
+    .btn-primary { background:#4a56e2; color:#fff; }
+    .btn-primary:disabled { background:#c5c9ff; cursor:not-allowed; }
+    .hint { font-size:.85rem; color:#666; }
+  </style>
 </head>
 <body>
-    <div class="image-header">
-        <img src="{{ file.urls.image }}" alt="{{ file.name }}">
-        <div class="image-overlay"></div>
-
-        <div class="header-nav">
-            <a href="/" class="back-link">← Back to Files</a>
-            <a href="/settings" class="settings-link">⚙️ Settings</a>
-        </div>
-
-        <h1 class="file-title">{{ file.name }}</h1>
+  <div class="hero">
+    <img src="{{ file.urls.image }}" alt="{{ file.name }}">
+    <div class="nav">
+      <a href="/">← Back</a>
+      <a href="/settings">⚙ Settings</a>
     </div>
+    <div class="title">{{ file.name }}</div>
+  </div>
 
-    <!-- Lightbox -->
-    <div class="lightbox" id="lightbox">
-        <span class="lightbox-close" id="lightbox-close">&times;</span>
-        <img src="{{ file.urls.image }}" alt="{{ file.name }}" id="lightbox-img">
-    </div>
+  <div class="container">
+    <div class="grid">
+      <div class="card">
+        <h3>File Info</h3>
+        <div class="row"><span class="label">Size</span><span>{{ "%.2f"|format(file.size_mb) }} MB</span></div>
+        <div class="row"><span class="label">Created</span><span>{{ file.created }}</span></div>
+        <div class="row"><span class="label">Modified</span><span>{{ file.modified }}</span></div>
+        <div class="row"><span class="label">Path</span><span class="mono">{{ file.path }}</span></div>
+      </div>
 
-    <div class="tabs">
-        <div class="tab active" data-tab="file-info">File Info</div>
-        <div class="tab" data-tab="metadata">Upload Metadata</div>
-        <div class="tab" data-tab="exif">EXIF Data</div>
-    </div>
-
-    <div class="container">
-        <!-- File Info Tab -->
-        <div class="tab-content active" id="file-info">
-            <div class="info-grid">
-                <div class="info-card">
-                    <h3>File Details</h3>
-                    <div class="info-row"><span class="info-label">File Name:</span><span class="info-value">{{ file.name }}</span></div>
-                    <div class="info-row"><span class="info-label">File Size:</span><span class="info-value">{{ file.size_mb }} MB</span></div>
-                    <div class="info-row"><span class="info-label">Created:</span><span class="info-value">{{ file.created }}</span></div>
-                    <div class="info-row"><span class="info-label">Modified:</span><span class="info-value">{{ file.modified }}</span></div>
-                    <div class="info-row"><span class="info-label">Status:</span><span class="info-value"><span class="status-badge">{{ file.status }}</span></span></div>
-                </div>
-
-                <div class="info-card">
-                    <h3>Location</h3>
-                    <div class="info-row">
-                        <span class="info-label">Full Path:</span>
-                        <span class="info-value path-value" title="{{ file.path }}">{{ file.path }}</span>
-                    </div>
-                </div>
-
-                {% if file.commons_check_status %}
-                <div class="info-card">
-                    <h3>Wikimedia Commons Check</h3>
-                    <div class="info-row">
-                        <span class="info-label">Status:</span>
-                        <span class="info-value">
-                            {% if file.commons_check_status == 'NOT_ON_COMMONS' %}
-                                <span class="status-badge not-on-commons">✓ Safe to Upload</span>
-                            {% elif file.commons_check_status == 'EXACT_MATCH' %}
-                                <span class="status-badge exact-match">⚠ Duplicate Found</span>
-                            {% elif file.commons_check_status == 'POSSIBLE_SCALED_VARIANT' %}
-                                <span class="status-badge scaled-variant">⚠ Possible Variant</span>
-                            {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
-                                <span class="status-badge exists-different">⚠ Name Conflict</span>
-                            {% elif file.commons_check_status == 'PENDING' %}
-                                <span class="status-badge pending" id="status-badge">Pending Check</span>
-                            {% elif file.commons_check_status == 'ERROR' %}
-                                <span class="status-badge error" id="status-badge">Check Failed</span>
-                            {% else %}
-                                <span class="status-badge">{{ file.commons_check_status }}</span>
-                            {% endif %}
-                        </span>
-                    </div>
-
-                    {% if file.sha1_local %}
-                    <div class="info-row">
-                        <span class="info-label">SHA-1 Hash:</span>
-                        <span class="info-value"><span class="sha1-hash">{{ file.sha1_local }}</span></span>
-                    </div>
-                    {% endif %}
-
-                    {% if file.check_details %}
-                    <div class="info-row">
-                        <span class="info-label">Details:</span>
-                        <span class="info-value">{{ file.check_details }}</span>
-                    </div>
-                    {% endif %}
-
-                    {% if file.commons_matches %}
-                    <div style="margin-top: 1rem;">
-                        <div class="info-label" style="margin-bottom: 0.5rem;">Matching Files on Commons:</div>
-                        {% for match in file.commons_matches %}
-                        <div class="commons-match">
-                            <a href="{{ match.url }}" target="_blank">{{ match.title }}</a><br>
-                            {% if match.match_type %}<span class="commons-match-type">{{ match.match_type }}</span>{% endif %}
-                            {% if match.sha1_remote and match.sha1_remote != file.sha1_local %}
-                                <br><span style="font-size: 0.85rem; color: #666;">Remote SHA-1: <span class="sha1-hash">{{ match.sha1_remote }}</span></span>
-                            {% endif %}
-                            {% if match.hamming_distance is not none %}
-                                <br><span style="font-size: 0.85rem; color: #666;">Similarity distance: {{ match.hamming_distance }}</span>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Upload Metadata Tab -->
-        <div class="tab-content" id="metadata">
-            <div class="info-grid">
-                <div class="info-card">
-                    <h3>File-Specific Metadata</h3>
-                    {% if file.category %}
-                    <div class="info-row">
-                        <span class="info-label">Category (from folder):</span>
-                        <span class="info-value" style="font-weight: 600; color: #667eea;">{{ file.category }}</span>
-                    </div>
-                    {% else %}
-                    <div class="info-row">
-                        <span class="info-label">Category:</span>
-                        <span class="info-value" style="color: #999;">No category folder detected</span>
-                    </div>
-                    {% endif %}
-                    <div style="margin-top: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 6px; font-size: 0.9rem; color: #666;">
-                        <strong>Tip:</strong> To automatically assign a category, place files in a folder starting with <code style="background: #e0e0e0; padding: 0.2rem 0.4rem; border-radius: 3px;">category_</code> (e.g., <code style="background: #e0e0e0; padding: 0.2rem 0.4rem; border-radius: 3px;">category_Architecture</code>)
-                    </div>
-                </div>
-
-                <div class="info-card">
-                    <h3>Default Upload Settings</h3>
-                    <div class="info-row"><span class="info-label">Copyright:</span><span class="info-value">{{ settings.copyright }}</span></div>
-                    <div class="info-row"><span class="info-label">Source:</span><span class="info-value">{{ settings.source }}</span></div>
-                    <div class="info-row"><span class="info-label">Author:</span><span class="info-value">{{ settings.author if settings.author else 'Not set' }}</span></div>
-                    <div class="info-row"><span class="info-label">Own Work:</span><span class="info-value">{{ 'Yes' if settings.own_work else 'No' }}</span></div>
-                    <div class="info-row"><span class="info-label">Default Categories:</span><span class="info-value">{{ settings.default_categories | join(', ') }}</span></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- EXIF Data Tab -->
-        <div class="tab-content" id="exif">
-            {% if exif.error %}
-            <div class="info-card"><p>Error reading EXIF data: {{ exif.error }}</p></div>
+      <div class="card">
+        <h3>Commons Check</h3>
+        <div class="row">
+          <span class="label">Status</span>
+          <span>
+            {% if file.commons_check_status == 'NOT_ON_COMMONS' %}
+              <span class="badge ok">✓ Safe to upload</span>
+            {% elif file.commons_check_status == 'EXACT_MATCH' %}
+              <span class="badge dup">Duplicate</span>
+            {% elif file.commons_check_status == 'POSSIBLE_SCALED_VARIANT' %}
+              <span class="badge warn">Variant?</span>
+            {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
+              <span class="badge warn">Name conflict</span>
+            {% elif file.commons_check_status == 'PENDING' %}
+              <span class="badge pending">Pending</span>
             {% else %}
-            <div class="exif-grid">
-                {% for key, value in exif.items() %}
-                <div class="exif-item">
-                    <div class="exif-key">{{ key }}</div>
-                    <div class="exif-value">{{ value }}</div>
-                </div>
-                {% endfor %}
-            </div>
+              <span class="badge pending">{{ file.commons_check_status }}</span>
             {% endif %}
+          </span>
         </div>
+        {% if file.sha1_local %}
+        <div class="row"><span class="label">Local SHA-1</span><span class="mono">{{ file.sha1_local }}</span></div>
+        {% endif %}
+
+        {% if file.commons_matches and file.commons_matches|length %}
+          <div style="margin-top:.5rem;">
+            <div class="label" style="margin-bottom:.35rem;">Matches:</div>
+            <ul style="padding-left:1rem;">
+              {% for m in file.commons_matches %}
+                <li><a href="{{ m.url }}" target="_blank">{{ m.title }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </div>
     </div>
 
-    <script>
-        // Tabs
-        const tabs = document.querySelectorAll('.tab');
-        const tabContents = document.querySelectorAll('.tab-content');
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                tabs.forEach(t => t.classList.remove('active'));
-                tabContents.forEach(tc => tc.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.getAttribute('data-tab')).classList.add('active');
-            });
-        });
+    {% if file.commons_check_status == "NOT_ON_COMMONS" %}
+    <div class="card" style="margin-top:1rem;">
+      <h3>Upload to Wikimedia Commons</h3>
+      {% if not upload_enabled %}
+        <p class="hint">🔒 Upload disabled. Add <code>COMMONS_USERNAME</code> and <code>COMMONS_PASSWORD</code> to your <code>.env</code>, then restart.</p>
+      {% endif %}
 
-        // Lightbox
-        const imageHeader = document.querySelector('.image-header');
-        const lightbox = document.getElementById('lightbox');
-        const lightboxImg = document.getElementById('lightbox-img');
-        const lightboxClose = document.getElementById('lightbox-close');
-        let isZoomed = false;
+      <div class="upload-panel">
+        <div class="upload-row">
+          <label>Commons filename</label>
+          <input id="target" type="text" value="{{ file.upload_suggestion.suggested_filename }}" {{ 'disabled' if not upload_enabled else '' }}>
+        </div>
+        <div class="upload-row">
+          <label>Category</label>
+          <input id="cat" type="text" value="{{ file.upload_suggestion.category_slug }}" {{ 'disabled' if not upload_enabled else '' }}>
+        </div>
+        <button class="btn btn-primary" onclick="uploadNow()" {{ 'disabled' if not upload_enabled else '' }}>⬆️ Upload</button>
+        <p class="hint" style="margin-top:.35rem;">You can edit the filename before uploading.</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
 
-        imageHeader.addEventListener('click', (e) => {
-            if (e.target.tagName === 'A' || e.target.closest('a')) return;
-            lightbox.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        });
+  <script>
+  async function uploadNow() {
+    const target = document.getElementById('target').value.trim();
+    const category_slug = document.getElementById('cat').value.trim();
+    if (!target) { alert('Please enter a target filename.'); return; }
 
-        lightboxClose.addEventListener('click', (e) => {
-            e.stopPropagation();
-            lightbox.classList.remove('active');
-            lightboxImg.classList.remove('zoomed');
-            isZoomed = false;
-            document.body.style.overflow = 'auto';
-        });
-
-        lightbox.addEventListener('click', (e) => {
-            if (e.target === lightbox) {
-                lightbox.classList.remove('active');
-                lightboxImg.classList.remove('zoomed');
-                isZoomed = false;
-                document.body.style.overflow = 'auto';
-            }
-        });
-
-        let isDragging = false, startX, startY, translateX = 0, translateY = 0, lastX = 0, lastY = 0;
-        lightboxImg.addEventListener('mousedown', (e) => {
-            if (!isZoomed) return;
-            isDragging = true;
-            startX = e.clientX - lastX;
-            startY = e.clientY - lastY;
-            lightboxImg.classList.add('dragging');
-            e.preventDefault();
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging || !isZoomed) return;
-            translateX = e.clientX - startX;
-            translateY = e.clientY - startY;
-            lightboxImg.style.transform = `translate(${translateX}px, ${translateY}px)`;
-        });
-        document.addEventListener('mouseup', () => {
-            if (!isDragging) return;
-            isDragging = false;
-            lastX = translateX; lastY = translateY;
-            lightboxImg.classList.remove('dragging');
-        });
-
-        let clickStartX, clickStartY;
-        lightboxImg.addEventListener('mousedown', (e) => { clickStartX = e.clientX; clickStartY = e.clientY; });
-        lightboxImg.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const moved = Math.hypot(e.clientX - clickStartX, e.clientY - clickStartY);
-            if (moved < 5) {
-                if (isZoomed) {
-                    lightboxImg.classList.remove('zoomed');
-                    lightboxImg.style.transform = 'translate(0, 0)';
-                    translateX = translateY = lastX = lastY = 0;
-                    isZoomed = false;
-                } else {
-                    lightboxImg.classList.add('zoomed');
-                    isZoomed = true;
-                }
-            }
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && lightbox.classList.contains('active')) {
-                lightbox.classList.remove('active');
-                lightboxImg.classList.remove('zoomed');
-                lightboxImg.style.transform = 'translate(0, 0)';
-                translateX = translateY = lastX = lastY = 0;
-                isZoomed = false;
-                document.body.style.overflow = 'auto';
-            }
-        });
-
-        // Re-check (optional; your backend currently has no /api/commons-check route)
-        async function recheckFile(filename) {
-            alert('Re-check endpoint not implemented in backend. Background checker updates status automatically.');
-        }
-    </script>
+    try {
+      const resp = await fetch('{{ url_for("api_upload") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: '{{ file.path|e }}',
+          target: target,
+          category_slug: category_slug
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        alert('Upload failed: ' + (data.error ? JSON.stringify(data.error) : resp.statusText));
+        return;
+      }
+      if (data.url) window.open(data.url, '_blank');
+      location.reload();
+    } catch (e) {
+      alert('Upload error: ' + e);
+    }
+  }
+  </script>
 </body>
 </html>

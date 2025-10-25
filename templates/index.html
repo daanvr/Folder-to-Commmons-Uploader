@@ -1,145 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Folder-to-Commons-Uploader - File Monitor</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative; }
-        .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-        .header p { opacity: 0.9; font-size: 1rem; }
-        .stats { display: flex; gap: 1rem; margin-top: 1rem; }
-        .stat-card { background: rgba(255,255,255,0.2); padding: 1rem; border-radius: 8px; backdrop-filter: blur(10px); }
-        .stat-card .number { font-size: 2rem; font-weight: bold; }
-        .stat-card .label { font-size: 0.9rem; opacity: 0.9; }
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
-        .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 2rem; }
-        .file-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
-        .file-card:hover { transform: translateY(-4px); box-shadow: 0 4px 20px rgba(0,0,0,0.12); }
-        .file-thumbnail { width: 100%; height: 200px; object-fit: cover; background: #f0f0f0; }
-        .file-card-content { padding: 1.5rem; }
-        .file-name { font-weight: 600; font-size: 1.1rem; color: #667eea; margin-bottom: 0.5rem; word-break: break-word; }
-        .file-info { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; color: #666; }
-        .file-info-row { display: flex; justify-content: space-between; }
-        .file-info-label { font-weight: 500; }
-        .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500; background: #4CAF50; color: white; }
-        .status-badge.not-on-commons { background: #4CAF50; }
-        .status-badge.exact-match { background: #f44336; }
-        .status-badge.scaled-variant { background: #FF9800; }
-        .status-badge.exists-different { background: #FF9800; }
-        .status-badge.pending { background: #9E9E9E; }
-        .status-badge.error { background: #f44336; }
-        .commons-status { margin-top: 0.5rem; padding: 0.5rem; background: #f9f9f9; border-radius: 6px; font-size: 0.85rem; }
-        .commons-status-label { font-weight: 600; margin-bottom: 0.25rem; }
-        .settings-link { position: absolute; top: 2rem; right: 2rem; background: rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-size: 0.95rem; transition: background 0.2s; }
-        .settings-link:hover { background: rgba(255,255,255,0.3); }
-        .auto-refresh-indicator { position: fixed; bottom: 2rem; right: 2rem; background: rgba(0,0,0,0.7); color: white; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-        .refresh-dot { width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Folder-to-Commons-Uploader - File Monitor</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif; background:#f5f5f5; color:#333; }
+    .header { background:linear-gradient(135deg,#667eea 0%, #764ba2 100%); color:#fff; padding:2rem; position:relative; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
+    .header h1 { font-size:2rem; margin-bottom:.25rem; }
+    .header p { opacity:.9; }
+    .settings-link { position:absolute; right:2rem; top:2rem; text-decoration:none; color:#fff; background:rgba(255,255,255,0.18); padding:.5rem 1rem; border-radius:8px; }
+    .container { max-width:1200px; margin:2rem auto; padding:0 1rem; }
+    .files-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap:1.25rem; }
+    .file-card { background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.08); }
+    .file-card__thumb { width:100%; height:200px; object-fit:cover; background:#eee; display:block; }
+    .file-card__body { padding:1rem; }
+    .file-name { font-weight:700; color:#4a56e2; margin-bottom:.35rem; word-break: break-word; }
+    .muted { color:#666; font-size:.9rem; }
+    .row { display:flex; justify-content:space-between; gap:1rem; margin:.25rem 0; }
+    .badge { display:inline-block; padding:.2rem .5rem; border-radius:999px; font-size:.8rem; color:#fff; }
+    .badge.ok { background:#2e7d32; }
+    .badge.pending { background:#757575; }
+    .badge.dup { background:#d32f2f; }
+    .badge.warn { background:#ef6c00; }
+
+    /* Upload panel */
+    .upload-panel { margin-top:.75rem; background:#f9fafc; border:1px solid #e6e8f2; border-radius:10px; padding:.75rem; }
+    .upload-panel h4 { font-size:1rem; margin-bottom:.5rem; color:#4a56e2; }
+    .upload-row { display:flex; flex-direction:column; gap:.35rem; margin:.35rem 0; }
+    .upload-row label { font-weight:600; font-size:.85rem; color:#444; }
+    .upload-row input[type="text"] { padding:.5rem .6rem; border:2px solid #e5e7eb; border-radius:8px; font-size:.95rem; }
+    .upload-actions { display:flex; gap:.5rem; align-items:center; margin-top:.35rem; }
+    .btn { border:none; padding:.55rem .9rem; border-radius:8px; font-weight:600; cursor:pointer; }
+    .btn-primary { background:#4a56e2; color:#fff; }
+    .btn-primary:disabled { background:#c5c9ff; cursor:not-allowed; }
+    .hint { font-size:.85rem; color:#666; }
+    .divider { height:1px; background:#efefef; margin:.6rem 0; }
+    .clickable { cursor:pointer; }
+  </style>
 </head>
 <body>
-    <div class="header">
-        <a href="/settings" class="settings-link">⚙️ Settings</a>
-        <h1>Folder-to-Commons-Uploader</h1>
-        <p>File Monitor Dashboard</p>
-        <div class="stats">
-            <div class="stat-card">
-                <div class="number">{{ total_files }}</div>
-                <div class="label">Detected Files</div>
+  <div class="header">
+    <a class="settings-link" href="/settings">⚙️ Settings</a>
+    <h1>Folder-to-Commons-Uploader</h1>
+    <p>Watching your folder and checking Wikimedia Commons duplicates.</p>
+  </div>
+
+  <div class="container">
+    {% if files and files|length %}
+    <div class="files-grid">
+      {% for file in files %}
+      <div class="file-card">
+        <div class="clickable" onclick="location.href='{{ file.urls.detail }}'">
+          <img class="file-card__thumb" src="{{ file.urls.thumb }}" alt="{{ file.name }}"
+               onerror="this.onerror=null;this.src='{{ file.urls.image }}'">
+        </div>
+
+        <div class="file-card__body">
+          <div class="file-name clickable" onclick="location.href='{{ file.urls.detail }}'">{{ file.name }}</div>
+          <div class="row"><span class="muted">Size</span><span>{{ "%.2f"|format(file.size_mb) }} MB</span></div>
+          <div class="row"><span class="muted">Created</span><span>{{ file.created }}</span></div>
+
+          {% if file.commons_check_status %}
+            <div class="row" style="align-items:center;">
+              <span class="muted">Commons</span>
+              {% if file.commons_check_status == "NOT_ON_COMMONS" %}
+                <span class="badge ok">✓ Safe to upload</span>
+              {% elif file.commons_check_status == "EXACT_MATCH" %}
+                <span class="badge dup">Duplicate</span>
+              {% elif file.commons_check_status == "POSSIBLE_SCALED_VARIANT" %}
+                <span class="badge warn">Variant?</span>
+              {% elif file.commons_check_status == "EXISTS_DIFFERENT_CONTENT" %}
+                <span class="badge warn">Name conflict</span>
+              {% elif file.commons_check_status == "PENDING" %}
+                <span class="badge pending">Pending</span>
+              {% else %}
+                <span class="badge pending">{{ file.commons_check_status }}</span>
+              {% endif %}
             </div>
-        </div>
-    </div>
+          {% endif %}
 
-    <div class="container">
-        {% if files %}
-        <div class="files-grid">
-            {% for file in files %}
-            <div class="file-card" onclick="window.location.href='{{ file.urls.detail }}'">
-                <img src="{{ file.urls.thumb }}" alt="{{ file.name }}" class="file-thumbnail" onerror="this.onerror=null; this.src='{{ file.urls.image }}'">
-                <div class="file-card-content">
-                    <div class="file-name">{{ file.name }}</div>
-                    <div class="file-info">
-                        {% if file.category %}
-                        <div class="file-info-row">
-                            <span class="file-info-label">Category:</span>
-                            <span style="color: #667eea; font-weight: 600;">{{ file.category }}</span>
-                        </div>
-                        {% endif %}
-                        <div class="file-info-row">
-                            <span class="file-info-label">Size:</span>
-                            <span>{{ file.size_mb }} MB</span>
-                        </div>
-                        <div class="file-info-row">
-                            <span class="file-info-label">Created:</span>
-                            <span>{{ file.created }}</span>
-                        </div>
-                        {% if file.commons_check_status %}
-                        <div class="commons-status">
-                            <div class="commons-status-label">Commons Check:</div>
-                            {% if file.commons_check_status == 'NOT_ON_COMMONS' %}
-                                <span class="status-badge not-on-commons">✓ Safe to Upload</span>
-                            {% elif file.commons_check_status == 'EXACT_MATCH' %}
-                                <span class="status-badge exact-match">⚠ Duplicate Found</span>
-                            {% elif file.commons_check_status == 'POSSIBLE_SCALED_VARIANT' %}
-                                <span class="status-badge scaled-variant">⚠ Possible Variant</span>
-                            {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
-                                <span class="status-badge exists-different">⚠ Name Conflict</span>
-                            {% elif file.commons_check_status == 'PENDING' %}
-                                <span class="status-badge pending">Pending Check</span>
-                            {% elif file.commons_check_status == 'ERROR' %}
-                                <span class="status-badge error">Check Failed</span>
-                            {% else %}
-                                <span class="status-badge">{{ file.commons_check_status }}</span>
-                            {% endif %}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
+          {% if file.commons_check_status == "NOT_ON_COMMONS" %}
+            <div class="upload-panel">
+              <h4>Upload to Wikimedia Commons</h4>
+
+              {% if not upload_enabled %}
+                <div class="hint">🔒 Upload disabled. Add <code>COMMONS_USERNAME</code> and <code>COMMONS_PASSWORD</code> to your <code>.env</code>, then restart.</div>
+              {% endif %}
+
+              <div class="upload-row">
+                <label for="target-{{ loop.index }}">Commons filename</label>
+                <input id="target-{{ loop.index }}" type="text"
+                       value="{{ file.upload_suggestion.suggested_filename }}"
+                       {{ 'disabled' if not upload_enabled else '' }}>
+              </div>
+
+              <div class="upload-row">
+                <label for="cat-{{ loop.index }}">Category</label>
+                <input id="cat-{{ loop.index }}" type="text"
+                       value="{{ file.upload_suggestion.category_slug }}"
+                       {{ 'disabled' if not upload_enabled else '' }}>
+              </div>
+
+              <div class="upload-actions">
+                <button class="btn btn-primary"
+                        onclick="uploadFile('{{ file.path|e }}', 'target-{{ loop.index }}', 'cat-{{ loop.index }}')"
+                        {{ 'disabled' if not upload_enabled else '' }}>
+                  ⬆️ Upload
+                </button>
+                <span class="hint">You can edit the filename before uploading.</span>
+              </div>
+              <div class="divider"></div>
+              <div class="hint">Opens the file page with initial description and categories.</div>
             </div>
-            {% endfor %}
+          {% endif %}
         </div>
-        {% else %}
-        <div class="empty-state">
-            <h2>No Files Detected Yet</h2>
-            <p>Add JPEG files to the watch folder to see them here.</p>
-        </div>
-        {% endif %}
+      </div>
+      {% endfor %}
     </div>
+    {% else %}
+      <p>No files detected yet. Drop JPG/JPEG files into the watch folder.</p>
+    {% endif %}
+  </div>
 
-    <div class="auto-refresh-indicator">
-        <div class="refresh-dot"></div>
-        <span>Auto-refresh active</span>
-    </div>
+  <script>
+  async function uploadFile(localPath, targetInputId, catInputId) {
+    const target = document.getElementById(targetInputId).value.trim();
+    const category_slug = document.getElementById(catInputId).value.trim();
+    if (!target) { alert("Please enter a target filename."); return; }
 
-    <script>
-        let lastFileCount = {{ total_files }};
-        let lastFileState = null;
-        let autoRefreshEnabled = true;
+    try {
+      const resp = await fetch('{{ url_for("api_upload") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: localPath,
+          target: target,
+          category_slug: category_slug
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        alert('Upload failed: ' + (data.error ? JSON.stringify(data.error) : resp.statusText));
+        return;
+      }
+      if (data.url) { window.open(data.url, '_blank'); }
+      // Refresh to reflect 'UPLOADED' status
+      location.reload();
+    } catch (e) {
+      alert('Upload error: ' + e);
+    }
+  }
 
-        function getFileStateSignature(files) {
-            return files.map(f => `${f.name}|${f.commons_check_status}|${f.sha1_local}`).sort().join('::');
-        }
-
-        setInterval(() => {
-            if (!autoRefreshEnabled) return;
-            fetch('/api/files')
-                .then(r => r.json())
-                .then(files => {
-                    const currentState = getFileStateSignature(files);
-                    if (lastFileState === null) {
-                        lastFileState = currentState;
-                        lastFileCount = files.length;
-                        return;
-                    }
-                    if (currentState !== lastFileState || files.length !== lastFileCount) {
-                        window.location.reload();
-                    }
-                })
-                .catch(console.error);
-        }, 3000);
-    </script>
+  // light auto-refresh so Commons-check status changes show up
+  let lastSig = null;
+  function sig(arr) {
+    return (arr||[]).map(f => `${f.path}|${f.commons_check_status}|${f.sha1_local}`).sort().join('::');
+  }
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/files');
+      const files = await r.json();
+      const s = sig(files);
+      if (lastSig === null) { lastSig = s; return; }
+      if (s !== lastSig) location.reload();
+    } catch {}
+  }, 3000);
+  </script>
 </body>
 </html>
