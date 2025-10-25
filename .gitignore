@@ -1,0 +1,22 @@
+# Watched files
+watch/*
+!watch/.gitkeep
+
+# Processed files database
+data/processed_files.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
