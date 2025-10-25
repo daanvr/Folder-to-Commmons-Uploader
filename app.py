@@ -37,6 +37,7 @@ from PIL import Image
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from html import unescape
 
 # ---- watchdog: use polling on Windows to be robust ----
 if os.name == "nt":
@@ -185,30 +186,37 @@ def wikitext_from_settings_and_category(settings: Dict[str, Any], category_slug:
 
 
 def commons_login_and_get_csrf(session: requests.Session, username: str, password: str) -> str:
-    """Login using action=clientlogin and return a CSRF token for upload."""
+    print("[UPLOAD] Getting login token…")
     r = session.get(COMMONS_API, params={
         "action": "query", "meta": "tokens", "type": "login", "format": "json"
-    }, timeout=TIMEOUT_SECS)
+    }, timeout=API_TIMEOUT)
     r.raise_for_status()
     login_token = r.json()["query"]["tokens"]["logintoken"]
 
+    print("[UPLOAD] clientlogin…")
     r2 = session.post(COMMONS_API, data={
         "action": "clientlogin", "format": "json",
         "username": username, "password": password,
         "loginreturnurl": "https://www.example.org/return",
         "logintoken": login_token,
-    }, timeout=TIMEOUT_SECS)
+    }, timeout=API_TIMEOUT)
     r2.raise_for_status()
     data2 = r2.json()
     status = (data2.get("clientlogin") or {}).get("status")
+    print(f"[UPLOAD] clientlogin status = {status}")
     if status != "PASS":
-        raise RuntimeError(f"Login failed: {data2}")
+        raise RuntimeError(f"Login failed: {json.dumps(data2, ensure_ascii=False)}")
 
+    print("[UPLOAD] Getting CSRF token…")
     r3 = session.get(COMMONS_API, params={
         "action": "query", "meta": "tokens", "type": "csrf", "format": "json"
-    }, timeout=TIMEOUT_SECS)
+    }, timeout=API_TIMEOUT)
     r3.raise_for_status()
-    return r3.json()["query"]["tokens"]["csrftoken"]
+    csrf = r3.json()["query"]["tokens"]["csrftoken"]
+    if not csrf or csrf == "+\\":
+        raise RuntimeError("Empty CSRF token")
+    return csrf
+
 
 
 def upload_to_commons(
@@ -725,6 +733,9 @@ def api_upload():
     local_name = data.get("filename", "")
     target = data.get("target", "")
     category_slug = data.get("category_slug", "")
+
+    # NEW: de-HTML-escape any windows backslashes etc.
+    local_name = unescape(local_name)
 
     if not local_name or not target:
         return jsonify({"ok": False, "error": "Missing 'filename' or 'target'"}), 400
