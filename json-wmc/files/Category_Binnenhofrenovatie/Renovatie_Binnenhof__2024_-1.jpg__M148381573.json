@@ -1,0 +1,103 @@
+{
+    "batchcomplete": true,
+    "query": {
+        "pages": [
+            {
+                "imageinfo": [
+                    {
+                        "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=148381573",
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:Renovatie_Binnenhof_(2024)-1.jpg",
+                        "extmetadata": {
+                            "Artist": {
+                                "source": "commons-desc-page",
+                                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Sneeuwvlakte\" title=\"User:Sneeuwvlakte\">Sneeuwvlakte</a>"
+                            },
+                            "Assessments": {
+                                "hidden": "",
+                                "source": "commons-categories",
+                                "value": ""
+                            },
+                            "AttributionRequired": {
+                                "hidden": "",
+                                "source": "commons-desc-page",
+                                "value": "true"
+                            },
+                            "Categories": {
+                                "hidden": "",
+                                "source": "commons-categories",
+                                "value": "Binnenhof|Self-published work|Netherlands photographs taken on 2024-05-13|May 2024 in The Hague|Binnenhofrenovatie"
+                            },
+                            "CommonsMetadataExtension": {
+                                "hidden": "",
+                                "source": "extension",
+                                "value": 1.2
+                            },
+                            "Copyrighted": {
+                                "hidden": "",
+                                "source": "commons-desc-page",
+                                "value": "True"
+                            },
+                            "Credit": {
+                                "source": "commons-desc-page",
+                                "value": "<span class=\"int-own-work\" lang=\"en\">Own work</span>"
+                            },
+                            "DateTime": {
+                                "hidden": "",
+                                "source": "mediawiki-metadata",
+                                "value": "2024-05-15 15:20:50"
+                            },
+                            "DateTimeOriginal": {
+                                "source": "commons-desc-page",
+                                "value": "2024-05-13 09:32:20"
+                            },
+                            "ImageDescription": {
+                                "source": "commons-desc-page",
+                                "value": "Temporary building on the Plein during the renovation of the Binnenhof."
+                            },
+                            "License": {
+                                "hidden": "",
+                                "source": "commons-templates",
+                                "value": "cc-by-sa-4.0"
+                            },
+                            "LicenseShortName": {
+                                "hidden": "",
+                                "source": "commons-desc-page",
+                                "value": "CC BY-SA 4.0"
+                            },
+                            "LicenseUrl": {
+                                "source": "commons-desc-page",
+                                "value": "https://creativecommons.org/licenses/by-sa/4.0"
+                            },
+                            "ObjectName": {
+                                "source": "mediawiki-metadata",
+                                "value": "Renovatie Binnenhof (2024)-1"
+                            },
+                            "Restrictions": {
+                                "hidden": "",
+                                "source": "commons-desc-page",
+                                "value": ""
+                            },
+                            "UsageTerms": {
+                                "source": "commons-desc-page",
+                                "value": "Creative Commons Attribution-Share Alike 4.0"
+                            }
+                        },
+                        "height": 3456,
+                        "mediatype": "BITMAP",
+                        "mime": "image/jpeg",
+                        "sha1": "a3863b7ae39a3c802267a654fbb3ac2c16d84911",
+                        "size": 7856724,
+                        "timestamp": "2024-05-15T15:20:50Z",
+                        "url": "https://upload.wikimedia.org/wikipedia/commons/6/62/Renovatie_Binnenhof_%282024%29-1.jpg",
+                        "user": "Sneeuwvlakte",
+                        "width": 4608
+                    }
+                ],
+                "imagerepository": "local",
+                "ns": 6,
+                "pageid": 148381573,
+                "title": "File:Renovatie Binnenhof (2024)-1.jpg"
+            }
+        ]
+    }
+}
