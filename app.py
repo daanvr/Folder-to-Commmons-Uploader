@@ -35,6 +35,41 @@ else:
     from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+
+def extract_category_from_path(file_path, watch_folder):
+    """
+    Extract category from directory name if file is in a subdirectory starting with 'category_'.
+
+    Args:
+        file_path: Path to the file
+        watch_folder: Path to the watch folder
+
+    Returns:
+        Category name if found, None otherwise
+    """
+    file_path = Path(file_path)
+    watch_folder = Path(watch_folder)
+
+    try:
+        # Get relative path from watch folder
+        relative_path = file_path.relative_to(watch_folder)
+
+        # Check if file is in a subdirectory
+        if len(relative_path.parts) > 1:
+            # Get the immediate parent directory name
+            parent_dir = relative_path.parts[0]
+
+            # Check if it starts with 'category_' (case-insensitive)
+            if parent_dir.lower().startswith('category_'):
+                # Extract category name (everything after 'category_')
+                category_name = parent_dir[9:]  # len('category_') = 9
+                return category_name if category_name else None
+    except (ValueError, IndexError):
+        pass
+
+    return None
+
+
 # ---- Import Commons duplicate checker (optional) ----
 try:
     from lib.commons_duplicate_checker import check_file_on_commons, build_session
@@ -87,6 +122,7 @@ class FileTracker:
             "commons_matches": kwargs.get("commons_matches", []),
             "checked_at": kwargs.get("checked_at", ""),
             "check_details": kwargs.get("check_details", ""),
+            "category": kwargs.get("category", None),
         }
 
     def is_processed(self, file_path: Path) -> bool:
@@ -159,8 +195,13 @@ class NewFileHandler(FileSystemEventHandler):
         except Exception:
             pass
 
-        # mark as tracked (pending commons check)
-        self.tracker.mark_processed(file_path, commons_check_status="PENDING")
+        # Extract category from directory path if present
+        category = extract_category_from_path(file_path, self.watch_folder)
+        if category:
+            print(f"  • Category: {category}")
+
+        # Mark as tracked (pending commons check) with category
+        self.tracker.mark_processed(file_path, commons_check_status="PENDING", category=category)
         print("  • Status: Tracked; Commons check scheduled.\n")
 
 
@@ -168,16 +209,19 @@ class NewFileHandler(FileSystemEventHandler):
 # Boot helpers
 # ========================
 
-def scan_existing_files(watch_folder: Path, tracker: FileTracker) -> None:
-    """Ensure existing JPG/JPEG files are tracked (as PENDING)."""
+def scan_existing_files(watch_folder: Path, tracker: FileTracker, settings: Dict[str, Any]) -> None:
+    """Ensure existing JPG/JPEG files are tracked (as PENDING), including subdirectories."""
     watch_folder.mkdir(parents=True, exist_ok=True)
     print(f"Scanning existing files in: {watch_folder}")
 
     existing_count = 0
-    for p in watch_folder.glob('*'):
+    # Use rglob to scan recursively through subdirectories
+    for p in watch_folder.rglob('*'):
         if p.is_file() and p.suffix.lower() in ('.jpg', '.jpeg'):
             if not tracker.is_processed(p):
-                tracker.mark_processed(p, commons_check_status="PENDING")
+                # Extract category from directory path if present
+                category = extract_category_from_path(p, watch_folder)
+                tracker.mark_processed(p, commons_check_status="PENDING", category=category)
                 existing_count += 1
     if existing_count:
         print(f"Marked {existing_count} existing file(s) as pending for Commons check.\n")
@@ -265,13 +309,13 @@ def start_monitoring() -> None:
         except Exception as e:
             print(f"Commons session init failed: {e}")
 
-    # Track existing files
-    scan_existing_files(watch_folder, tracker)
+    # Track existing files (recursive scan)
+    scan_existing_files(watch_folder, tracker, settings)
 
-    # Set up watcher for NEW files
+    # Set up watcher for NEW files (recursive monitoring)
     event_handler = NewFileHandler(tracker, watch_folder, settings, commons_session)
     observer = Observer()
-    observer.schedule(event_handler, str(watch_folder), recursive=False)
+    observer.schedule(event_handler, str(watch_folder), recursive=True)
     try:
         observer.start()
     except Exception as e:
@@ -279,7 +323,7 @@ def start_monitoring() -> None:
         print(f"Observer start failed ({e}); falling back to PollingObserver.")
         from watchdog.observers.polling import PollingObserver
         observer = PollingObserver()
-        observer.schedule(event_handler, str(watch_folder), recursive=False)
+        observer.schedule(event_handler, str(watch_folder), recursive=True)
         observer.start()
 
     # Start background checker for PENDING items
@@ -305,12 +349,13 @@ def save_settings(settings: Dict[str, Any]) -> None:
     with open('settings.json', 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2)
 
-def get_file_info(file_path: str) -> Optional[Dict[str, Any]]:
+def get_file_info(file_path: str, watch_folder: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Get detailed information about a file."""
     p = Path(file_path)
     if not p.exists():
         return None
     st = p.stat()
-    return {
+    info = {
         'path': str(p),
         'name': p.name,
         'size': st.st_size,
@@ -321,6 +366,18 @@ def get_file_info(file_path: str) -> Optional[Dict[str, Any]]:
         'status': 'Detected'
     }
 
+    # Add relative path for URL generation
+    if watch_folder:
+        try:
+            rel_path = p.relative_to(watch_folder)
+            info['relative_path'] = str(rel_path)
+        except ValueError:
+            info['relative_path'] = p.name
+    else:
+        info['relative_path'] = p.name
+
+    return info
+
 
 # ========================
 # Routes (UI + API)
@@ -330,12 +387,13 @@ def get_file_info(file_path: str) -> Optional[Dict[str, Any]]:
 def index():
     """Main page showing all tracked files + Commons status."""
     settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
     tracker = FileTracker(Path(settings['processed_files_db']))
     records = tracker.get_all_files()
 
     files_info: List[Dict[str, Any]] = []
     for rec in records:
-        info = get_file_info(rec.get('file_path', ''))
+        info = get_file_info(rec.get('file_path', ''), watch_folder)
         if not info:
             continue
         # enrich with Commons checker fields
@@ -343,22 +401,71 @@ def index():
         info['commons_matches'] = rec.get('commons_matches', [])
         info['check_details'] = rec.get('check_details', '')
         info['sha1_local'] = rec.get('sha1_local', '')
+        info['category'] = rec.get('category')
         files_info.append(info)
 
     files_info.sort(key=lambda x: x['created'], reverse=True)
     return render_template('index.html', files=files_info, total_files=len(files_info), settings=settings)
 
 
-@app.route('/file/<filename>')
+@app.route('/file/<path:filename>')
 def file_detail(filename: str):
-    """Detail page for one file (by filename under watch folder)."""
+    """Detail page for a specific file (supports subdirectories)."""
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+
+    # Support both direct filenames and paths with subdirectories
+    file_path = watch_folder / filename
+
+    file_info = get_file_info(str(file_path), watch_folder)
+    if not file_info:
+        return "File not found", 404
+
+    # Pull checker fields
+    tracker = FileTracker(Path(settings['processed_files_db']))
+    rec = tracker.get_file_record(str(file_path))
+    if rec:
+        file_info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
+        file_info['commons_matches'] = rec.get('commons_matches', [])
+        file_info['check_details'] = rec.get('check_details', '')
+        file_info['sha1_local'] = rec.get('sha1_local', '')
+        file_info['category'] = rec.get('category')
+
+    # Minimal EXIF (safe subset)
+    exif = extract_exif_safe(str(file_path))
+    return render_template('file_detail.html', file=file_info, exif=exif, settings=settings)
+
+
+@app.route('/api/files')
+def api_files():
+    """JSON list of tracked files."""
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    tracker = FileTracker(Path(settings['processed_files_db']))
+    out = []
+    for rec in tracker.get_all_files():
+        info = get_file_info(rec.get('file_path', ''), watch_folder)
+        if not info:
+            continue
+        info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
+        info['commons_matches'] = rec.get('commons_matches', [])
+        info['check_details'] = rec.get('check_details', '')
+        info['sha1_local'] = rec.get('sha1_local', '')
+        info['category'] = rec.get('category')
+        out.append(info)
+    return jsonify(out)
+
+
+@app.route('/api/file/<path:filename>')
+def api_file_detail(filename: str):
+    """JSON details for a single file (supports subdirectories)."""
     settings = load_settings()
     watch_folder = Path(settings['watch_folder']).resolve()
     p = watch_folder / filename
 
-    info = get_file_info(str(p))
+    info = get_file_info(str(p), watch_folder)
     if not info:
-        return "File not found", 404
+        return jsonify({"error": "File not found"}), 404
 
     # Pull checker fields
     tracker = FileTracker(Path(settings['processed_files_db']))
@@ -368,48 +475,15 @@ def file_detail(filename: str):
         info['commons_matches'] = rec.get('commons_matches', [])
         info['check_details'] = rec.get('check_details', '')
         info['sha1_local'] = rec.get('sha1_local', '')
-
-    # Minimal EXIF (safe subset)
-    exif = extract_exif_safe(str(p))
-    return render_template('file_detail.html', file=info, exif=exif, settings=settings)
-
-
-@app.route('/api/files')
-def api_files():
-    """JSON list of tracked files."""
-    settings = load_settings()
-    tracker = FileTracker(Path(settings['processed_files_db']))
-    out = []
-    for rec in tracker.get_all_files():
-        info = get_file_info(rec.get('file_path', ''))
-        if not info:
-            continue
-        info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
-        info['commons_matches'] = rec.get('commons_matches', [])
-        info['check_details'] = rec.get('check_details', '')
-        info['sha1_local'] = rec.get('sha1_local', '')
-        out.append(info)
-    return jsonify(out)
-
-
-@app.route('/api/file/<filename>')
-def api_file_detail(filename: str):
-    """JSON details for a single file."""
-    settings = load_settings()
-    watch_folder = Path(settings['watch_folder']).resolve()
-    p = watch_folder / filename
-
-    info = get_file_info(str(p))
-    if not info:
-        return jsonify({"error": "File not found"}), 404
+        info['category'] = rec.get('category')
 
     exif = extract_exif_safe(str(p))
     return jsonify({"file": info, "exif": exif})
 
 
-@app.route('/image/<filename>')
+@app.route('/image/<path:filename>')
 def serve_image(filename: str):
-    """Serve the original image bytes."""
+    """Serve image file (supports subdirectories)."""
     settings = load_settings()
     p = Path(settings['watch_folder']).resolve() / filename
     if not p.exists() or not p.is_file():
@@ -417,9 +491,9 @@ def serve_image(filename: str):
     return send_file(str(p), mimetype='image/jpeg')
 
 
-@app.route('/thumbnail/<filename>')
+@app.route('/thumbnail/<path:filename>')
 def serve_thumbnail(filename: str):
-    """Serve a resized thumbnail (JPEG)."""
+    """Serve thumbnail version of image (supports subdirectories)."""
     settings = load_settings()
     p = Path(settings['watch_folder']).resolve() / filename
     if not p.exists() or not p.is_file():
@@ -499,9 +573,9 @@ def api_run_commons_check():
     return jsonify({"processed": processed}), 200
 
 
-@app.route('/api/commons-check/<filename>', methods=['POST'])
+@app.route('/api/commons-check/<path:filename>', methods=['POST'])
 def api_check_single(filename: str):
-    """Run a Commons check for a single file by filename."""
+    """Run a Commons check for a single file by filename (supports subdirectories)."""
     s = load_settings()
     p = Path(s['watch_folder']).resolve() / filename
     tracker = FileTracker(Path(s['processed_files_db']))

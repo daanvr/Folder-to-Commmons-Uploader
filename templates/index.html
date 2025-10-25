@@ -243,11 +243,17 @@
         {% if files %}
         <div class="files-grid">
             {% for file in files %}
-            <div class="file-card" onclick="window.location.href='{{ url_for('file_detail', filename=file.name) }}'">
-                <img src="{{ url_for('serve_thumbnail', filename=file.name) }}" alt="{{ file.name }}" class="file-thumbnail">
+            <div class="file-card" onclick="window.location.href='{{ url_for('file_detail', filename=file.relative_path) }}'">
+                <img src="{{ url_for('serve_thumbnail', filename=file.relative_path) }}" alt="{{ file.name }}" class="file-thumbnail">
                 <div class="file-card-content">
                     <div class="file-name">{{ file.name }}</div>
                     <div class="file-info">
+                        {% if file.category %}
+                        <div class="file-info-row">
+                            <span class="file-info-label">Category:</span>
+                            <span style="color: #667eea; font-weight: 600;">{{ file.category }}</span>
+                        </div>
+                        {% endif %}
                         <div class="file-info-row">
                             <span class="file-info-label">Size:</span>
                             <span>{{ file.size_mb }} MB</span>
@@ -296,19 +302,41 @@
 
     <script>
         let lastFileCount = {{ total_files }};
+        let lastFileState = null;
         let autoRefreshEnabled = true;
 
-        // Check for new files every 3 seconds
+        // Create a state signature from files to detect any changes
+        function getFileStateSignature(files) {
+            return files.map(f =>
+                `${f.name}|${f.commons_check_status}|${f.sha1_local}`
+            ).sort().join('::');
+        }
+
+        // Check for new files and status changes every 3 seconds
         setInterval(() => {
             if (!autoRefreshEnabled) return;
 
             fetch('/api/files')
                 .then(response => response.json())
                 .then(files => {
-                    if (files.length !== lastFileCount) {
-                        console.log(`File count changed: ${lastFileCount} -> ${files.length}`);
+                    const currentState = getFileStateSignature(files);
+
+                    // Initialize on first run
+                    if (lastFileState === null) {
+                        lastFileState = currentState;
                         lastFileCount = files.length;
-                        // Reload the page to show new files
+                        return;
+                    }
+
+                    // Check if anything changed
+                    if (currentState !== lastFileState || files.length !== lastFileCount) {
+                        console.log(`File state changed - reloading...`);
+                        if (files.length !== lastFileCount) {
+                            console.log(`  File count: ${lastFileCount} -> ${files.length}`);
+                        } else {
+                            console.log(`  File status updated`);
+                        }
+                        // Reload the page to show changes
                         window.location.reload();
                     }
                 })
