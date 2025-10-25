@@ -13,6 +13,41 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+
+def extract_category_from_path(file_path, watch_folder):
+    """
+    Extract category from directory name if file is in a subdirectory starting with 'category_'.
+
+    Args:
+        file_path: Path to the file
+        watch_folder: Path to the watch folder
+
+    Returns:
+        Category name if found, None otherwise
+    """
+    file_path = Path(file_path)
+    watch_folder = Path(watch_folder)
+
+    try:
+        # Get relative path from watch folder
+        relative_path = file_path.relative_to(watch_folder)
+
+        # Check if file is in a subdirectory
+        if len(relative_path.parts) > 1:
+            # Get the immediate parent directory name
+            parent_dir = relative_path.parts[0]
+
+            # Check if it starts with 'category_'
+            if parent_dir.startswith('category_'):
+                # Extract category name (everything after 'category_')
+                category_name = parent_dir[9:]  # len('category_') = 9
+                return category_name if category_name else None
+    except (ValueError, IndexError):
+        pass
+
+    return None
+
+
 # Import Commons duplicate checker
 try:
     from lib.commons_duplicate_checker import check_file_on_commons, build_session
@@ -51,6 +86,7 @@ class FileTracker:
             "commons_matches": kwargs.get("commons_matches", []),
             "checked_at": kwargs.get("checked_at", ""),
             "check_details": kwargs.get("check_details", ""),
+            "category": kwargs.get("category", None),
         }
         return record
 
@@ -126,8 +162,13 @@ class NewFileHandler(FileSystemEventHandler):
         print(f"  - Size: {file_path.stat().st_size} bytes")
         print(f"  - Created: {time.ctime(file_path.stat().st_ctime)}")
 
+        # Extract category from directory path if present
+        category = extract_category_from_path(file_path, self.watch_folder)
+        if category:
+            print(f"  - Category: {category}")
+
         # Mark as detected (not yet uploaded, but tracked)
-        self.tracker.mark_processed(file_path)
+        self.tracker.mark_processed(file_path, category=category)
 
         # Check for duplicates on Commons if enabled
         if self.settings.get('enable_duplicate_check', False) and check_file_on_commons:
@@ -195,10 +236,13 @@ def scan_existing_files(watch_folder, tracker):
     print(f"Scanning existing files in: {watch_path}")
     existing_count = 0
 
-    for file_path in watch_path.glob('*'):
+    # Scan files in root and subdirectories (recursive)
+    for file_path in watch_path.rglob('*'):
         if file_path.is_file() and file_path.suffix.lower() in ['.jpg', '.jpeg']:
             if not tracker.is_processed(file_path):
-                tracker.mark_processed(file_path)
+                # Extract category from directory path if present
+                category = extract_category_from_path(file_path, watch_folder)
+                tracker.mark_processed(file_path, category=category)
                 existing_count += 1
 
     if existing_count > 0:
@@ -246,7 +290,7 @@ def main():
     # Set up file system observer
     event_handler = NewFileHandler(tracker, watch_folder, settings, commons_session)
     observer = Observer()
-    observer.schedule(event_handler, str(watch_folder), recursive=False)
+    observer.schedule(event_handler, str(watch_folder), recursive=True)
     observer.start()
 
     print("Monitoring started. Press Ctrl+C to stop.")
