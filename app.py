@@ -177,8 +177,10 @@ def get_file_info(file_path):
 
 
 def get_exif_data(file_path):
-    """Extract EXIF data from image"""
+    """Extract comprehensive EXIF data from image"""
     try:
+        from PIL.ExifTags import TAGS, GPSTAGS
+
         image = Image.open(file_path)
         exif_data = {}
 
@@ -186,19 +188,95 @@ def get_exif_data(file_path):
         exif_data['Image Size'] = f"{image.width} x {image.height}"
         exif_data['Image Format'] = image.format
         exif_data['Image Mode'] = image.mode
+        exif_data['Megapixels'] = round((image.width * image.height) / 1_000_000, 2)
 
         # Get EXIF tags
         exifdata = image.getexif()
         if exifdata:
             for tag_id, value in exifdata.items():
                 tag = TAGS.get(tag_id, tag_id)
+
                 # Convert bytes to string for display
                 if isinstance(value, bytes):
                     try:
                         value = value.decode()
                     except:
                         value = str(value)
+
+                # Format specific tags better
+                if tag == 'ExifOffset' or tag == 'GPSInfo':
+                    continue  # Skip these, we'll handle them separately
+
                 exif_data[tag] = value
+
+            # Get IFD (Image File Directory) data for more detailed info
+            ifd = exifdata.get_ifd(0x8769)  # ExifOffset
+            if ifd:
+                for tag_id, value in ifd.items():
+                    tag = TAGS.get(tag_id, tag_id)
+
+                    # Handle special value types
+                    if isinstance(value, bytes):
+                        try:
+                            value = value.decode()
+                        except:
+                            value = str(value)
+                    elif isinstance(value, tuple) and len(value) == 2:
+                        # Rational number (like exposure time)
+                        if value[1] != 0:
+                            if tag in ['ExposureTime', 'ShutterSpeedValue']:
+                                value = f"{value[0]}/{value[1]} sec"
+                            elif tag in ['FNumber', 'ApertureValue']:
+                                value = f"f/{round(value[0]/value[1], 1)}"
+                            elif tag in ['FocalLength']:
+                                value = f"{round(value[0]/value[1], 1)} mm"
+                            else:
+                                value = round(value[0] / value[1], 3)
+
+                    exif_data[tag] = value
+
+            # Get GPS data if available
+            gps_ifd = exifdata.get_ifd(0x8825)  # GPSInfo
+            if gps_ifd:
+                gps_data = {}
+                for tag_id, value in gps_ifd.items():
+                    tag = GPSTAGS.get(tag_id, tag_id)
+                    gps_data[tag] = value
+
+                # Parse GPS coordinates
+                if 'GPSLatitude' in gps_data and 'GPSLongitude' in gps_data:
+                    lat = gps_data['GPSLatitude']
+                    lon = gps_data['GPSLongitude']
+                    lat_ref = gps_data.get('GPSLatitudeRef', 'N')
+                    lon_ref = gps_data.get('GPSLongitudeRef', 'E')
+
+                    # Convert to decimal degrees
+                    def to_decimal(coord):
+                        if isinstance(coord, tuple) and len(coord) == 3:
+                            d = coord[0] if isinstance(coord[0], (int, float)) else coord[0][0] / coord[0][1]
+                            m = coord[1] if isinstance(coord[1], (int, float)) else coord[1][0] / coord[1][1]
+                            s = coord[2] if isinstance(coord[2], (int, float)) else coord[2][0] / coord[2][1]
+                            return d + (m / 60.0) + (s / 3600.0)
+                        return 0
+
+                    lat_decimal = to_decimal(lat)
+                    lon_decimal = to_decimal(lon)
+
+                    if lat_ref == 'S':
+                        lat_decimal = -lat_decimal
+                    if lon_ref == 'W':
+                        lon_decimal = -lon_decimal
+
+                    exif_data['GPS Coordinates'] = f"{lat_decimal:.6f}, {lon_decimal:.6f}"
+                    exif_data['GPS Latitude'] = f"{lat_decimal:.6f}° {lat_ref}"
+                    exif_data['GPS Longitude'] = f"{lon_decimal:.6f}° {lon_ref}"
+
+                # Add altitude if available
+                if 'GPSAltitude' in gps_data:
+                    alt = gps_data['GPSAltitude']
+                    if isinstance(alt, tuple) and len(alt) == 2:
+                        alt_m = alt[0] / alt[1]
+                        exif_data['GPS Altitude'] = f"{alt_m:.1f} m"
 
         return exif_data
     except Exception as e:
