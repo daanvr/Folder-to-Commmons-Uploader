@@ -105,6 +105,10 @@ def index():
 @app.route('/file/<path:filepath>')
 def file_detail(filepath):
     """Detail page for a specific file"""
+    # Add leading slash if missing (happens with absolute paths in URLs)
+    if not filepath.startswith('/'):
+        filepath = '/' + filepath
+
     file_info = get_file_info(filepath)
     if not file_info:
         return "File not found", 404
@@ -135,6 +139,10 @@ def api_files():
 @app.route('/api/file/<path:filepath>')
 def api_file_detail(filepath):
     """API endpoint for file details"""
+    # Add leading slash if missing (happens with absolute paths in URLs)
+    if not filepath.startswith('/'):
+        filepath = '/' + filepath
+
     file_info = get_file_info(filepath)
     if not file_info:
         return jsonify({'error': 'File not found'}), 404
