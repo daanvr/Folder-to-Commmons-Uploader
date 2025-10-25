@@ -28,6 +28,9 @@
     .btn-primary { background:#4a56e2; color:#fff; }
     .btn-primary:disabled { background:#c5c9ff; cursor:not-allowed; }
     .hint { font-size:.85rem; color:#666; }
+    .status { font-size:.9rem; }
+    .status.ok { color:#2e7d32; }
+    .status.err { color:#d32f2f; }
   </style>
 </head>
 <body>
@@ -103,7 +106,10 @@
           <label>Category</label>
           <input id="cat" type="text" value="{{ file.upload_suggestion.category_slug }}" {{ 'disabled' if not upload_enabled else '' }}>
         </div>
-        <button class="btn btn-primary" onclick="uploadNow()" {{ 'disabled' if not upload_enabled else '' }}>⬆️ Upload</button>
+        <div class="upload-row" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+          <button id="btn" class="btn btn-primary" onclick="uploadNow()" {{ 'disabled' if not upload_enabled else '' }}>⬆️ Upload</button>
+          <span id="st" class="status"></span>
+        </div>
         <p class="hint" style="margin-top:.35rem;">You can edit the filename before uploading.</p>
       </div>
     </div>
@@ -112,29 +118,47 @@
 
   <script>
   async function uploadNow() {
+    const btn = document.getElementById('btn');
+    const st = document.getElementById('st');
     const target = document.getElementById('target').value.trim();
     const category_slug = document.getElementById('cat').value.trim();
     if (!target) { alert('Please enter a target filename.'); return; }
+
+    btn.disabled = true;
+    st.textContent = 'Uploading…';
+    st.className = 'status';
 
     try {
       const resp = await fetch('{{ url_for("api_upload") }}', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: '{{ file.path|e }}',
+          filename: {{ file.path|tojson }},
           target: target,
           category_slug: category_slug
         })
       });
-      const data = await resp.json();
+      const ct = resp.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await resp.json() : { ok:false, error: 'Non-JSON response', status: resp.status };
+
       if (!resp.ok || !data.ok) {
+        st.textContent = 'Upload failed';
+        st.className = 'status err';
+        console.error('Upload error', data);
         alert('Upload failed: ' + (data.error ? JSON.stringify(data.error) : resp.statusText));
+        btn.disabled = false;
         return;
       }
+      st.textContent = 'Uploaded ✓';
+      st.className = 'status ok';
       if (data.url) window.open(data.url, '_blank');
-      location.reload();
+      setTimeout(() => location.reload(), 600);
     } catch (e) {
+      st.textContent = 'Upload error';
+      st.className = 'status err';
+      console.error('Upload exception', e);
       alert('Upload error: ' + e);
+      btn.disabled = false;
     }
   }
   </script>

@@ -1,3 +1,4 @@
+
 # MacOS-to-Commons-Uploader
 
 A cross-platform Python tool that monitors a folder for new files and automatically uploads them to Wikimedia Commons with appropriate file titles, license templates, categories and other metadata.

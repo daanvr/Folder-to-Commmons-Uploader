@@ -25,17 +25,19 @@
     .badge.dup { background:#d32f2f; }
     .badge.warn { background:#ef6c00; }
 
-    /* Upload panel */
     .upload-panel { margin-top:.75rem; background:#f9fafc; border:1px solid #e6e8f2; border-radius:10px; padding:.75rem; }
     .upload-panel h4 { font-size:1rem; margin-bottom:.5rem; color:#4a56e2; }
     .upload-row { display:flex; flex-direction:column; gap:.35rem; margin:.35rem 0; }
     .upload-row label { font-weight:600; font-size:.85rem; color:#444; }
     .upload-row input[type="text"] { padding:.5rem .6rem; border:2px solid #e5e7eb; border-radius:8px; font-size:.95rem; }
-    .upload-actions { display:flex; gap:.5rem; align-items:center; margin-top:.35rem; }
+    .upload-actions { display:flex; gap:.5rem; align-items:center; margin-top:.35rem; flex-wrap:wrap; }
     .btn { border:none; padding:.55rem .9rem; border-radius:8px; font-weight:600; cursor:pointer; }
     .btn-primary { background:#4a56e2; color:#fff; }
     .btn-primary:disabled { background:#c5c9ff; cursor:not-allowed; }
     .hint { font-size:.85rem; color:#666; }
+    .status { font-size:.9rem; }
+    .status.ok { color:#2e7d32; }
+    .status.err { color:#d32f2f; }
     .divider { height:1px; background:#efefef; margin:.6rem 0; }
     .clickable { cursor:pointer; }
   </style>
@@ -104,11 +106,12 @@
               </div>
 
               <div class="upload-actions">
-                <button class="btn btn-primary"
-                        onclick="uploadFile('{{ file.path|e }}', 'target-{{ loop.index }}', 'cat-{{ loop.index }}')"
+                <button id="btn-{{ loop.index }}" class="btn btn-primary"
+                        onclick="uploadFile({{ file.path|tojson }}, 'target-{{ loop.index }}', 'cat-{{ loop.index }}', 'btn-{{ loop.index }}', 'st-{{ loop.index }}')"
                         {{ 'disabled' if not upload_enabled else '' }}>
                   ⬆️ Upload
                 </button>
+                <span id="st-{{ loop.index }}" class="status"></span>
                 <span class="hint">You can edit the filename before uploading.</span>
               </div>
               <div class="divider"></div>
@@ -125,35 +128,49 @@
   </div>
 
   <script>
-  async function uploadFile(localPath, targetInputId, catInputId) {
+  async function uploadFile(localPath, targetInputId, catInputId, btnId, statusId) {
+    const btn = document.getElementById(btnId);
+    const status = document.getElementById(statusId);
     const target = document.getElementById(targetInputId).value.trim();
     const category_slug = document.getElementById(catInputId).value.trim();
     if (!target) { alert("Please enter a target filename."); return; }
+
+    btn.disabled = true;
+    status.textContent = "Uploading…";
+    status.className = "status";
 
     try {
       const resp = await fetch('{{ url_for("api_upload") }}', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: localPath,
-          target: target,
-          category_slug: category_slug
-        })
+        body: JSON.stringify({ filename: localPath, target, category_slug })
       });
-      const data = await resp.json();
+      const ct = resp.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await resp.json() : { ok:false, error: 'Non-JSON response', status: resp.status };
+
       if (!resp.ok || !data.ok) {
+        status.textContent = "Upload failed";
+        status.className = "status err";
+        console.error('Upload error', data);
         alert('Upload failed: ' + (data.error ? JSON.stringify(data.error) : resp.statusText));
+        btn.disabled = false;
         return;
       }
+      status.textContent = "Uploaded ✓";
+      status.className = "status ok";
       if (data.url) { window.open(data.url, '_blank'); }
-      // Refresh to reflect 'UPLOADED' status
-      location.reload();
+      // small delay so user sees the green check
+      setTimeout(() => location.reload(), 600);
     } catch (e) {
+      status.textContent = "Upload error";
+      status.className = "status err";
+      console.error('Upload exception', e);
       alert('Upload error: ' + e);
+      btn.disabled = false;
     }
   }
 
-  // light auto-refresh so Commons-check status changes show up
+  // auto-refresh (so background Commons check results appear)
   let lastSig = null;
   function sig(arr) {
     return (arr||[]).map(f => `${f.path}|${f.commons_check_status}|${f.sha1_local}`).sort().join('::');
