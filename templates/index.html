@@ -132,6 +132,43 @@
             color: white;
         }
 
+        .status-badge.not-on-commons {
+            background: #4CAF50;
+        }
+
+        .status-badge.exact-match {
+            background: #f44336;
+        }
+
+        .status-badge.scaled-variant {
+            background: #FF9800;
+        }
+
+        .status-badge.exists-different {
+            background: #FF9800;
+        }
+
+        .status-badge.pending {
+            background: #9E9E9E;
+        }
+
+        .status-badge.error {
+            background: #f44336;
+        }
+
+        .commons-status {
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: #f9f9f9;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .commons-status-label {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
         .empty-state {
             text-align: center;
             padding: 4rem 2rem;
@@ -219,10 +256,26 @@
                             <span class="file-info-label">Created:</span>
                             <span>{{ file.created }}</span>
                         </div>
-                        <div class="file-info-row">
-                            <span class="file-info-label">Status:</span>
-                            <span class="status-badge">{{ file.status }}</span>
+                        {% if file.commons_check_status %}
+                        <div class="commons-status">
+                            <div class="commons-status-label">Commons Check:</div>
+                            {% if file.commons_check_status == 'NOT_ON_COMMONS' %}
+                                <span class="status-badge not-on-commons">✓ Safe to Upload</span>
+                            {% elif file.commons_check_status == 'EXACT_MATCH' %}
+                                <span class="status-badge exact-match">⚠ Duplicate Found</span>
+                            {% elif file.commons_check_status == 'POSSIBLE_SCALED_VARIANT' %}
+                                <span class="status-badge scaled-variant">⚠ Possible Variant</span>
+                            {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
+                                <span class="status-badge exists-different">⚠ Name Conflict</span>
+                            {% elif file.commons_check_status == 'PENDING' %}
+                                <span class="status-badge pending">Pending Check</span>
+                            {% elif file.commons_check_status == 'ERROR' %}
+                                <span class="status-badge error">Check Failed</span>
+                            {% else %}
+                                <span class="status-badge">{{ file.commons_check_status }}</span>
+                            {% endif %}
                         </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>

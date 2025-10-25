@@ -8,5 +8,9 @@
     "Files uploaded with Folder-to-Commons-Uploader",
     "Files uploaded by User:Daanvr"
   ],
-  "source": "Own work"
+  "source": "Own work",
+  "enable_duplicate_check": true,
+  "check_scaled_variants": false,
+  "fuzzy_threshold": 10,
+  "block_duplicate_uploads": true
 }

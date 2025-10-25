@@ -236,6 +236,67 @@
             color: white;
         }
 
+        .status-badge.not-on-commons {
+            background: #4CAF50;
+        }
+
+        .status-badge.exact-match {
+            background: #f44336;
+        }
+
+        .status-badge.scaled-variant {
+            background: #FF9800;
+        }
+
+        .status-badge.exists-different {
+            background: #FF9800;
+        }
+
+        .status-badge.pending {
+            background: #9E9E9E;
+        }
+
+        .status-badge.error {
+            background: #f44336;
+        }
+
+        .commons-match {
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: #f9f9f9;
+            border-left: 3px solid #667eea;
+            border-radius: 4px;
+        }
+
+        .commons-match a {
+            color: #667eea;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        .commons-match a:hover {
+            text-decoration: underline;
+        }
+
+        .commons-match-type {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            background: #e8eaf6;
+            color: #667eea;
+            margin-top: 0.25rem;
+        }
+
+        .sha1-hash {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #f5f5f5;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+
         .exif-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -337,6 +398,66 @@
                         <span class="info-value path-value" title="{{ file.path }}">{{ file.path }}</span>
                     </div>
                 </div>
+
+                {% if file.commons_check_status %}
+                <div class="info-card">
+                    <h3>Wikimedia Commons Check</h3>
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value">
+                            {% if file.commons_check_status == 'NOT_ON_COMMONS' %}
+                                <span class="status-badge not-on-commons">✓ Safe to Upload</span>
+                            {% elif file.commons_check_status == 'EXACT_MATCH' %}
+                                <span class="status-badge exact-match">⚠ Duplicate Found</span>
+                            {% elif file.commons_check_status == 'POSSIBLE_SCALED_VARIANT' %}
+                                <span class="status-badge scaled-variant">⚠ Possible Variant</span>
+                            {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
+                                <span class="status-badge exists-different">⚠ Name Conflict</span>
+                            {% elif file.commons_check_status == 'PENDING' %}
+                                <span class="status-badge pending">Pending Check</span>
+                            {% elif file.commons_check_status == 'ERROR' %}
+                                <span class="status-badge error">Check Failed</span>
+                            {% else %}
+                                <span class="status-badge">{{ file.commons_check_status }}</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if file.sha1_local %}
+                    <div class="info-row">
+                        <span class="info-label">SHA-1 Hash:</span>
+                        <span class="info-value"><span class="sha1-hash">{{ file.sha1_local }}</span></span>
+                    </div>
+                    {% endif %}
+                    {% if file.check_details %}
+                    <div class="info-row">
+                        <span class="info-label">Details:</span>
+                        <span class="info-value">{{ file.check_details }}</span>
+                    </div>
+                    {% endif %}
+                    {% if file.commons_matches %}
+                    <div style="margin-top: 1rem;">
+                        <div class="info-label" style="margin-bottom: 0.5rem;">Matching Files on Commons:</div>
+                        {% for match in file.commons_matches %}
+                        <div class="commons-match">
+                            <a href="{{ match.url }}" target="_blank">{{ match.title }}</a>
+                            <br>
+                            {% if match.match_type %}
+                            <span class="commons-match-type">{{ match.match_type }}</span>
+                            {% endif %}
+                            {% if match.sha1_remote and match.sha1_remote != file.sha1_local %}
+                            <br>
+                            <span style="font-size: 0.85rem; color: #666;">Remote SHA-1: <span class="sha1-hash">{{ match.sha1_remote }}</span></span>
+                            {% endif %}
+                            {% if match.hamming_distance is not none %}
+                            <br>
+                            <span style="font-size: 0.85rem; color: #666;">Similarity distance: {{ match.hamming_distance }}</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
