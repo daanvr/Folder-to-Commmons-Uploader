@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folder-to-Commons-Uploader - File Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1rem;
+        }
+
+        .stats {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.2);
+            padding: 1rem;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-card .number {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .stat-card .label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .files-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .file-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+
+        .file-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        .file-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+            word-break: break-word;
+        }
+
+        .file-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .file-info-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .file-info-label {
+            font-weight: 500;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: #4CAF50;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+
+        .empty-state h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .settings-info {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        .settings-info h2 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+
+        .setting-item {
+            padding: 0.5rem;
+        }
+
+        .setting-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .setting-value {
+            color: #333;
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Folder-to-Commons-Uploader</h1>
+        <p>File Monitor Dashboard</p>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number">{{ total_files }}</div>
+                <div class="label">Detected Files</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="settings-info">
+            <h2>Configuration</h2>
+            <div class="settings-grid">
+                <div class="setting-item">
+                    <div class="setting-label">Watch Folder</div>
+                    <div class="setting-value">{{ settings.watch_folder }}</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Copyright</div>
+                    <div class="setting-value">{{ settings.copyright }}</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Default Categories</div>
+                    <div class="setting-value">{{ settings.default_categories | join(', ') }}</div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Own Work</div>
+                    <div class="setting-value">{{ 'Yes' if settings.own_work else 'No' }}</div>
+                </div>
+            </div>
+        </div>
+
+        {% if files %}
+        <div class="files-grid">
+            {% for file in files %}
+            <div class="file-card" onclick="window.location.href='/file/{{ file.path }}'">
+                <div class="file-name">{{ file.name }}</div>
+                <div class="file-info">
+                    <div class="file-info-row">
+                        <span class="file-info-label">Size:</span>
+                        <span>{{ file.size_mb }} MB</span>
+                    </div>
+                    <div class="file-info-row">
+                        <span class="file-info-label">Created:</span>
+                        <span>{{ file.created }}</span>
+                    </div>
+                    <div class="file-info-row">
+                        <span class="file-info-label">Status:</span>
+                        <span class="status-badge">{{ file.status }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h2>No Files Detected Yet</h2>
+            <p>Add JPEG files to the watch folder to see them here.</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
