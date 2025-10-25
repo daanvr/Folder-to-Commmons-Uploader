@@ -343,19 +343,18 @@ def index():
                          settings=settings)
 
 
-@app.route('/file/<path:filepath>')
-def file_detail(filepath):
+@app.route('/file/<filename>')
+def file_detail(filename):
     """Detail page for a specific file"""
-    # Add leading slash if missing (happens with absolute paths in URLs)
-    if not filepath.startswith('/'):
-        filepath = '/' + filepath
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    file_path = watch_folder / filename
 
-    file_info = get_file_info(filepath)
+    file_info = get_file_info(str(file_path))
     if not file_info:
         return "File not found", 404
 
-    exif_data = get_exif_data(filepath)
-    settings = load_settings()
+    exif_data = get_exif_data(str(file_path))
 
     return render_template('file_detail.html',
                          file=file_info,
@@ -377,18 +376,18 @@ def api_files():
     return jsonify(files_info)
 
 
-@app.route('/api/file/<path:filepath>')
-def api_file_detail(filepath):
+@app.route('/api/file/<filename>')
+def api_file_detail(filename):
     """API endpoint for file details"""
-    # Add leading slash if missing (happens with absolute paths in URLs)
-    if not filepath.startswith('/'):
-        filepath = '/' + filepath
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    file_path = watch_folder / filename
 
-    file_info = get_file_info(filepath)
+    file_info = get_file_info(str(file_path))
     if not file_info:
         return jsonify({'error': 'File not found'}), 404
 
-    exif_data = get_exif_data(filepath)
+    exif_data = get_exif_data(str(file_path))
 
     return jsonify({
         'file': file_info,
@@ -396,34 +395,32 @@ def api_file_detail(filepath):
     })
 
 
-@app.route('/image/<path:filepath>')
-def serve_image(filepath):
+@app.route('/image/<filename>')
+def serve_image(filename):
     """Serve image file"""
-    # Add leading slash if missing
-    if not filepath.startswith('/'):
-        filepath = '/' + filepath
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    file_path = watch_folder / filename
 
-    path = Path(filepath)
-    if not path.exists() or not path.is_file():
+    if not file_path.exists() or not file_path.is_file():
         return "Image not found", 404
 
-    return send_file(filepath, mimetype='image/jpeg')
+    return send_file(str(file_path), mimetype='image/jpeg')
 
 
-@app.route('/thumbnail/<path:filepath>')
-def serve_thumbnail(filepath):
+@app.route('/thumbnail/<filename>')
+def serve_thumbnail(filename):
     """Serve thumbnail version of image"""
-    # Add leading slash if missing
-    if not filepath.startswith('/'):
-        filepath = '/' + filepath
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    file_path = watch_folder / filename
 
-    path = Path(filepath)
-    if not path.exists() or not path.is_file():
+    if not file_path.exists() or not file_path.is_file():
         return "Image not found", 404
 
     # Create thumbnail
     try:
-        img = Image.open(path)
+        img = Image.open(file_path)
         img.thumbnail((300, 300))
 
         # Save to a temporary BytesIO object
