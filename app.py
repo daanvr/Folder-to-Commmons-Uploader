@@ -56,7 +56,10 @@ except Exception as e:
     build_checker_session = None  # type: ignore
 
 # Load environment (.env) for Commons upload credentials
-load_dotenv()
+# Look for .env in parent directory (repository root) first, then current directory
+repo_root = Path(__file__).parent.parent.parent
+load_dotenv(repo_root / '.env')
+load_dotenv()  # Also check current directory as fallback
 COMMONS_USERNAME = os.getenv("COMMONS_USERNAME", "").strip()
 COMMONS_PASSWORD = os.getenv("COMMONS_PASSWORD", "").strip()
 
