@@ -529,6 +529,50 @@ def api_file_detail(filename):
     })
 
 
+@app.route('/api/recheck/<filename>', methods=['POST'])
+def api_recheck_file(filename):
+    """API endpoint to re-check a file for duplicates on Commons"""
+    settings = load_settings()
+    watch_folder = Path(settings['watch_folder']).resolve()
+    file_path = watch_folder / filename
+
+    if not file_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    # Check if duplicate checking is enabled
+    if not settings.get('enable_duplicate_check', False):
+        return jsonify({'error': 'Duplicate checking is disabled in settings'}), 400
+
+    if not check_file_on_commons:
+        return jsonify({'error': 'Duplicate checker module not available'}), 500
+
+    # Perform duplicate check
+    try:
+        session = build_session() if build_session else None
+        check_result = check_file_on_commons(
+            file_path,
+            session=session,
+            check_scaled=settings.get('check_scaled_variants', False),
+            fuzzy_threshold=settings.get('fuzzy_threshold', 10)
+        )
+
+        # Update tracker with results
+        db_path = Path(settings['processed_files_db'])
+        tracker = FileTracker(db_path)
+        tracker.update_commons_check(str(file_path), check_result)
+
+        return jsonify({
+            'success': True,
+            'status': check_result.get('status', 'ERROR'),
+            'details': check_result.get('details', ''),
+            'sha1_local': check_result.get('sha1_local', ''),
+            'matches': check_result.get('matches', []),
+            'checked_at': check_result.get('checked_at', '')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/image/<filename>')
 def serve_image(filename):
     """Serve image file"""

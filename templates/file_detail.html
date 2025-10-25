@@ -336,6 +336,41 @@
         .path-value:hover {
             direction: ltr;
         }
+
+        .recheck-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .recheck-button:hover {
+            background: #5568d3;
+        }
+
+        .recheck-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .recheck-button.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        .recheck-button.loading::after {
+            content: "⏳ Checking...";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -414,14 +449,24 @@
                             {% elif file.commons_check_status == 'EXISTS_DIFFERENT_CONTENT' %}
                                 <span class="status-badge exists-different">⚠ Name Conflict</span>
                             {% elif file.commons_check_status == 'PENDING' %}
-                                <span class="status-badge pending">Pending Check</span>
+                                <span class="status-badge pending" id="status-badge">Pending Check</span>
                             {% elif file.commons_check_status == 'ERROR' %}
-                                <span class="status-badge error">Check Failed</span>
+                                <span class="status-badge error" id="status-badge">Check Failed</span>
                             {% else %}
                                 <span class="status-badge">{{ file.commons_check_status }}</span>
                             {% endif %}
                         </span>
                     </div>
+                    {% if file.commons_check_status in ['PENDING', 'ERROR'] and settings.enable_duplicate_check %}
+                    <div class="info-row">
+                        <span class="info-label"></span>
+                        <span class="info-value">
+                            <button id="recheck-btn" class="recheck-button" onclick="recheckFile('{{ file.name }}')">
+                                🔄 Re-check Now
+                            </button>
+                        </span>
+                    </div>
+                    {% endif %}
                     {% if file.sha1_local %}
                     <div class="info-row">
                         <span class="info-label">SHA-1 Hash:</span>
@@ -644,6 +689,38 @@
                 document.body.style.overflow = 'auto';
             }
         });
+
+        // Re-check file for duplicates
+        async function recheckFile(filename) {
+            const button = document.getElementById('recheck-btn');
+            const statusBadge = document.getElementById('status-badge');
+
+            // Disable button and show loading state
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                const response = await fetch(`/api/recheck/${encodeURIComponent(filename)}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Reload the page to show updated status
+                    window.location.reload();
+                } else {
+                    // Show error
+                    alert(`Error: ${data.error || 'Failed to re-check file'}`);
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                }
+            } catch (error) {
+                alert(`Network error: ${error.message}`);
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
     </script>
 </body>
 </html>
