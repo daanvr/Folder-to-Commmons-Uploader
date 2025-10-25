@@ -184,6 +184,21 @@ def get_exif_data(file_path):
         image = Image.open(file_path)
         exif_data = {}
 
+        # Tags to skip (non-useful or binary data)
+        SKIP_TAGS = {
+            'ExifOffset', 'GPSInfo', 'MakerNote', 'UserComment',
+            'ComponentsConfiguration', 'SceneType', 'Padding',
+            'OffsetTime', 'OffsetTimeOriginal', 'OffsetTimeDigitized',
+            'PrintImageMatching', 'DNGPrivateData', 'ApplicationNotes',
+            'ImageUniqueID', 'BodySerialNumber'
+        }
+
+        # Tags that contain large binary data to skip by ID
+        SKIP_TAG_IDS = {
+            59932,  # Padding
+            37500,  # MakerNote
+        }
+
         # Get basic image info
         exif_data['Image Size'] = f"{image.width} x {image.height}"
         exif_data['Image Format'] = image.format
@@ -196,16 +211,26 @@ def get_exif_data(file_path):
             for tag_id, value in exifdata.items():
                 tag = TAGS.get(tag_id, tag_id)
 
+                # Skip unwanted tags
+                if tag in SKIP_TAGS or tag_id in SKIP_TAG_IDS:
+                    continue
+
+                # Skip unknown numeric tags (not in TAGS dictionary)
+                if isinstance(tag, int):
+                    continue
+
+                # Skip large binary data
+                if isinstance(value, bytes) and len(value) > 100:
+                    continue
+
                 # Convert bytes to string for display
                 if isinstance(value, bytes):
                     try:
-                        value = value.decode()
+                        value = value.decode('utf-8', errors='ignore').strip()
+                        if not value or not value.isprintable():
+                            continue
                     except:
-                        value = str(value)
-
-                # Format specific tags better
-                if tag == 'ExifOffset' or tag == 'GPSInfo':
-                    continue  # Skip these, we'll handle them separately
+                        continue
 
                 exif_data[tag] = value
 
@@ -215,12 +240,26 @@ def get_exif_data(file_path):
                 for tag_id, value in ifd.items():
                     tag = TAGS.get(tag_id, tag_id)
 
+                    # Skip unwanted tags
+                    if tag in SKIP_TAGS or tag_id in SKIP_TAG_IDS:
+                        continue
+
+                    # Skip unknown numeric tags
+                    if isinstance(tag, int):
+                        continue
+
+                    # Skip large binary data
+                    if isinstance(value, bytes) and len(value) > 100:
+                        continue
+
                     # Handle special value types
                     if isinstance(value, bytes):
                         try:
-                            value = value.decode()
+                            value = value.decode('utf-8', errors='ignore').strip()
+                            if not value or not value.isprintable():
+                                continue
                         except:
-                            value = str(value)
+                            continue
                     elif isinstance(value, tuple) and len(value) == 2:
                         # Rational number (like exposure time)
                         if value[1] != 0:
