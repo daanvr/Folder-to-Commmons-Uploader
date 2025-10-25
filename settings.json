@@ -1,0 +1,11 @@
+{
+  "watch_folder": "./watch",
+  "processed_files_db": "./data/processed_files.json",
+  "own_work": true,
+  "copyright": "CC-BY-SA-4.0",
+  "author": "",
+  "default_categories": [
+    "Files uploaded with MacOS-to-Commons-Uploader"
+  ],
+  "source": "Own work"
+}
