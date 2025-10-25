@@ -64,12 +64,17 @@
             max-height: 95%;
             object-fit: contain;
             cursor: zoom-in;
+            transition: transform 0.1s ease-out;
         }
 
         .lightbox img.zoomed {
             max-width: none;
             max-height: none;
-            cursor: zoom-out;
+            cursor: grab;
+        }
+
+        .lightbox img.zoomed.dragging {
+            cursor: grabbing;
         }
 
         .lightbox-close {
@@ -425,15 +430,68 @@
             }
         });
 
-        // Zoom in/out on image click
+        // Pan/drag functionality for zoomed image
+        let isDragging = false;
+        let startX, startY;
+        let translateX = 0, translateY = 0;
+        let lastTranslateX = 0, lastTranslateY = 0;
+
+        lightboxImg.addEventListener('mousedown', (e) => {
+            if (isZoomed) {
+                isDragging = true;
+                startX = e.clientX - lastTranslateX;
+                startY = e.clientY - lastTranslateY;
+                lightboxImg.classList.add('dragging');
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && isZoomed) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                lightboxImg.style.transform = `translate(${translateX}px, ${translateY}px)`;
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                lastTranslateX = translateX;
+                lastTranslateY = translateY;
+                lightboxImg.classList.remove('dragging');
+            }
+        });
+
+        // Zoom in/out on image click (only if not dragging)
+        let clickStartX, clickStartY;
+        lightboxImg.addEventListener('mousedown', (e) => {
+            clickStartX = e.clientX;
+            clickStartY = e.clientY;
+        });
+
         lightboxImg.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (isZoomed) {
-                lightboxImg.classList.remove('zoomed');
-                isZoomed = false;
-            } else {
-                lightboxImg.classList.add('zoomed');
-                isZoomed = true;
+
+            // Only toggle zoom if we didn't drag (click position hasn't moved much)
+            const dragDistance = Math.sqrt(
+                Math.pow(e.clientX - clickStartX, 2) +
+                Math.pow(e.clientY - clickStartY, 2)
+            );
+
+            if (dragDistance < 5) { // Less than 5px movement = click, not drag
+                if (isZoomed) {
+                    lightboxImg.classList.remove('zoomed');
+                    lightboxImg.style.transform = 'translate(0, 0)';
+                    translateX = 0;
+                    translateY = 0;
+                    lastTranslateX = 0;
+                    lastTranslateY = 0;
+                    isZoomed = false;
+                } else {
+                    lightboxImg.classList.add('zoomed');
+                    isZoomed = true;
+                }
             }
         });
 
@@ -442,6 +500,11 @@
             if (e.key === 'Escape' && lightbox.classList.contains('active')) {
                 lightbox.classList.remove('active');
                 lightboxImg.classList.remove('zoomed');
+                lightboxImg.style.transform = 'translate(0, 0)';
+                translateX = 0;
+                translateY = 0;
+                lastTranslateX = 0;
+                lastTranslateY = 0;
                 isZoomed = false;
                 document.body.style.overflow = 'auto';
             }
