@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ file.name }} - File Details</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .image-header {
+            position: relative;
+            background: #000;
+            cursor: pointer;
+        }
+
+        .image-header img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .image-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.3) 100%);
+            pointer-events: none;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            cursor: zoom-out;
+        }
+
+        .lightbox.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            cursor: zoom-in;
+            transition: transform 0.1s ease-out;
+        }
+
+        .lightbox img.zoomed {
+            max-width: none;
+            max-height: none;
+            cursor: grab;
+        }
+
+        .lightbox img.zoomed.dragging {
+            cursor: grabbing;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            color: white;
+            font-size: 3rem;
+            cursor: pointer;
+            background: rgba(0,0,0,0.5);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: background 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background: rgba(0,0,0,0.8);
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+        }
+
+        .back-link, .settings-link {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            transition: background 0.2s;
+            font-size: 0.95rem;
+        }
+
+        .back-link:hover, .settings-link:hover {
+            background: rgba(0,0,0,0.5);
+        }
+
+        .file-title {
+            position: absolute;
+            bottom: 2rem;
+            left: 2rem;
+            z-index: 10;
+            color: white;
+            font-size: 2rem;
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            max-width: 70%;
+            word-break: break-word;
+        }
+
+        .tabs {
+            background: white;
+            border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .tab {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .tab:hover {
+            color: #667eea;
+            background: #f9f9f9;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        .info-card h3 {
+            font-size: 1.1rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .info-value {
+            color: #333;
+            text-align: right;
+            word-break: break-word;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: #4CAF50;
+            color: white;
+        }
+
+        .exif-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        .exif-item {
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .exif-key {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .exif-value {
+            color: #333;
+            font-size: 0.95rem;
+            word-break: break-word;
+        }
+
+        .path-value {
+            overflow: hidden;
+            white-space: nowrap;
+            direction: rtl;
+            text-align: left;
+            max-height: 1.5rem;
+            cursor: pointer;
+            transition: direction 0.3s;
+        }
+
+        .path-value:hover {
+            direction: ltr;
+        }
+    </style>
+</head>
+<body>
+    <div class="image-header">
+        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}">
+        <div class="image-overlay"></div>
+
+        <div class="header-nav">
+            <a href="/" class="back-link">← Back to Files</a>
+            <a href="/settings" class="settings-link">⚙️ Settings</a>
+        </div>
+
+        <h1 class="file-title">{{ file.name }}</h1>
+    </div>
+
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox">
+        <span class="lightbox-close" id="lightbox-close">&times;</span>
+        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}" id="lightbox-img">
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="file-info">File Info</div>
+        <div class="tab" data-tab="metadata">Upload Metadata</div>
+        <div class="tab" data-tab="exif">EXIF Data</div>
+    </div>
+
+    <div class="container">
+        <!-- File Info Tab -->
+        <div class="tab-content active" id="file-info">
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>File Details</h3>
+                    <div class="info-row">
+                        <span class="info-label">File Name:</span>
+                        <span class="info-value">{{ file.name }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">File Size:</span>
+                        <span class="info-value">{{ file.size_mb }} MB</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Created:</span>
+                        <span class="info-value">{{ file.created }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Modified:</span>
+                        <span class="info-value">{{ file.modified }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value"><span class="status-badge">{{ file.status }}</span></span>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>Location</h3>
+                    <div class="info-row">
+                        <span class="info-label">Full Path:</span>
+                        <span class="info-value path-value" title="{{ file.path }}">{{ file.path }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Metadata Tab -->
+        <div class="tab-content" id="metadata">
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>Default Upload Settings</h3>
+                    <div class="info-row">
+                        <span class="info-label">Copyright:</span>
+                        <span class="info-value">{{ settings.copyright }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Source:</span>
+                        <span class="info-value">{{ settings.source }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Author:</span>
+                        <span class="info-value">{{ settings.author if settings.author else 'Not set' }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Own Work:</span>
+                        <span class="info-value">{{ 'Yes' if settings.own_work else 'No' }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Default Categories:</span>
+                        <span class="info-value">{{ settings.default_categories | join(', ') }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EXIF Data Tab -->
+        <div class="tab-content" id="exif">
+            {% if exif.error %}
+            <div class="info-card">
+                <p>Error reading EXIF data: {{ exif.error }}</p>
+            </div>
+            {% else %}
+            <div class="exif-grid">
+                {% for key, value in exif.items() %}
+                <div class="exif-item">
+                    <div class="exif-key">{{ key }}</div>
+                    <div class="exif-value">{{ value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(tc => tc.classList.remove('active'));
+
+                // Add active class to clicked tab
+                tab.classList.add('active');
+
+                // Show corresponding content
+                const tabId = tab.getAttribute('data-tab');
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+
+        // Lightbox functionality
+        const imageHeader = document.querySelector('.image-header');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxClose = document.getElementById('lightbox-close');
+        let isZoomed = false;
+
+        // Open lightbox when clicking on header image
+        imageHeader.addEventListener('click', (e) => {
+            // Don't open lightbox if clicking on nav links
+            if (e.target.tagName === 'A' || e.target.closest('a')) {
+                return;
+            }
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+
+        // Close lightbox
+        lightboxClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            lightbox.classList.remove('active');
+            lightboxImg.classList.remove('zoomed');
+            isZoomed = false;
+            document.body.style.overflow = 'auto';
+        });
+
+        // Close on background click
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+                lightbox.classList.remove('active');
+                lightboxImg.classList.remove('zoomed');
+                isZoomed = false;
+                document.body.style.overflow = 'auto';
+            }
+        });
+
+        // Pan/drag functionality for zoomed image
+        let isDragging = false;
+        let startX, startY;
+        let translateX = 0, translateY = 0;
+        let lastTranslateX = 0, lastTranslateY = 0;
+
+        lightboxImg.addEventListener('mousedown', (e) => {
+            if (isZoomed) {
+                isDragging = true;
+                startX = e.clientX - lastTranslateX;
+                startY = e.clientY - lastTranslateY;
+                lightboxImg.classList.add('dragging');
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && isZoomed) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                lightboxImg.style.transform = `translate(${translateX}px, ${translateY}px)`;
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                lastTranslateX = translateX;
+                lastTranslateY = translateY;
+                lightboxImg.classList.remove('dragging');
+            }
+        });
+
+        // Zoom in/out on image click (only if not dragging)
+        let clickStartX, clickStartY;
+        lightboxImg.addEventListener('mousedown', (e) => {
+            clickStartX = e.clientX;
+            clickStartY = e.clientY;
+        });
+
+        lightboxImg.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            // Only toggle zoom if we didn't drag (click position hasn't moved much)
+            const dragDistance = Math.sqrt(
+                Math.pow(e.clientX - clickStartX, 2) +
+                Math.pow(e.clientY - clickStartY, 2)
+            );
+
+            if (dragDistance < 5) { // Less than 5px movement = click, not drag
+                if (isZoomed) {
+                    lightboxImg.classList.remove('zoomed');
+                    lightboxImg.style.transform = 'translate(0, 0)';
+                    translateX = 0;
+                    translateY = 0;
+                    lastTranslateX = 0;
+                    lastTranslateY = 0;
+                    isZoomed = false;
+                } else {
+                    lightboxImg.classList.add('zoomed');
+                    isZoomed = true;
+                }
+            }
+        });
+
+        // Close lightbox with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && lightbox.classList.contains('active')) {
+                lightbox.classList.remove('active');
+                lightboxImg.classList.remove('zoomed');
+                lightboxImg.style.transform = 'translate(0, 0)';
+                translateX = 0;
+                translateY = 0;
+                lastTranslateX = 0;
+                lastTranslateY = 0;
+                isZoomed = false;
+                document.body.style.overflow = 'auto';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -2,6 +2,9 @@
 watch/*
 !watch/.gitkeep
 
+# Test files
+files/
+
 # Processed files database
 data/processed_files.json
 
@@ -20,3 +23,6 @@ ENV/
 .idea/
 *.swp
 *.swo
+
+# macOS
+.DS_Store
