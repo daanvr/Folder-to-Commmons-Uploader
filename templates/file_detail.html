@@ -261,6 +261,14 @@
             font-size: 0.95rem;
             word-break: break-word;
         }
+
+        .path-value {
+            overflow: hidden;
+            white-space: nowrap;
+            direction: rtl;
+            text-align: left;
+            max-height: 1.5rem;
+        }
     </style>
 </head>
 <body>
@@ -320,7 +328,7 @@
                     <h3>Location</h3>
                     <div class="info-row">
                         <span class="info-label">Full Path:</span>
-                        <span class="info-value">{{ file.path }}</span>
+                        <span class="info-value path-value">{{ file.path }}</span>
                     </div>
                 </div>
             </div>
