@@ -6,6 +6,8 @@ A cross-platform Python tool that monitors a folder for new files and automatica
 
 - Monitors a folder for new JPEG files
 - Tracks processed files to avoid duplicates
+- Web UI to view detected files and their metadata
+- EXIF data extraction and display
 - Configurable metadata defaults
 - Cross-platform support (macOS and Windows)
 
@@ -54,7 +56,29 @@ Edit `settings.json` to configure:
 
 ## Running
 
-### Quick Start (One Command)
+### Option 1: Web UI (Recommended)
+
+View detected files with full metadata and EXIF data in a web browser.
+
+**macOS/Linux:**
+```bash
+source venv/bin/activate && python app.py
+```
+
+**Windows:**
+```cmd
+venv\Scripts\activate.bat && python app.py
+```
+
+Then open your browser to: `http://localhost:5000`
+
+The web interface shows:
+- List of all detected files
+- File status and metadata
+- Complete EXIF data for each image
+- Configuration settings
+
+### Option 2: Command Line Monitor
 
 **macOS/Linux:**
 ```bash
@@ -66,15 +90,7 @@ source venv/bin/activate && python monitor.py
 venv\Scripts\activate.bat && python monitor.py
 ```
 
-### Step-by-Step
-
-1. Make sure the virtual environment is activated
-2. Start the folder monitor:
-   ```bash
-   python monitor.py
-   ```
-3. The tool will monitor the configured folder and log when new JPEG files are detected
-4. Press `Ctrl+C` to stop monitoring
+This will monitor the configured folder and log when new JPEG files are detected. Press `Ctrl+C` to stop monitoring.
 
 ## Usage
 
@@ -87,12 +103,16 @@ venv\Scripts\activate.bat && python monitor.py
 
 ```
 .
-├── monitor.py              # Main monitoring script
-├── settings.json           # Configuration file
-├── requirements.txt        # Python dependencies
-├── setup.sh               # Setup script for macOS/Linux
-├── setup.bat              # Setup script for Windows
-├── watch/                 # Watched folder (configurable)
-└── data/                  # Tracking database
+├── app.py                 # Flask web UI application
+├── monitor.py             # Command-line monitoring script
+├── settings.json          # Configuration file
+├── requirements.txt       # Python dependencies
+├── setup.sh              # Setup script for macOS/Linux
+├── setup.bat             # Setup script for Windows
+├── templates/            # HTML templates for web UI
+│   ├── index.html        # File list view
+│   └── file_detail.html  # File detail view
+├── watch/                # Watched folder (configurable)
+└── data/                 # Tracking database
     └── processed_files.json
 ```
