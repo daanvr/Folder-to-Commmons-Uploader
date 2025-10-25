@@ -20,16 +20,14 @@
 
         .image-header {
             position: relative;
-            height: 400px;
-            overflow: hidden;
             background: #000;
+            cursor: pointer;
         }
 
         .image-header img {
             width: 100%;
-            height: 100%;
-            object-fit: cover;
-            opacity: 0.85;
+            height: auto;
+            display: block;
         }
 
         .image-overlay {
@@ -38,7 +36,62 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 100%);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.3) 100%);
+            pointer-events: none;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            cursor: zoom-out;
+        }
+
+        .lightbox.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            cursor: zoom-in;
+        }
+
+        .lightbox img.zoomed {
+            max-width: none;
+            max-height: none;
+            cursor: zoom-out;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            color: white;
+            font-size: 3rem;
+            cursor: pointer;
+            background: rgba(0,0,0,0.5);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: background 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background: rgba(0,0,0,0.8);
         }
 
         .header-nav {
@@ -218,6 +271,12 @@
         <h1 class="file-title">{{ file.name }}</h1>
     </div>
 
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox">
+        <span class="lightbox-close" id="lightbox-close">&times;</span>
+        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}" id="lightbox-img">
+    </div>
+
     <div class="tabs">
         <div class="tab active" data-tab="file-info">File Info</div>
         <div class="tab" data-tab="metadata">Upload Metadata</div>
@@ -328,6 +387,64 @@
                 const tabId = tab.getAttribute('data-tab');
                 document.getElementById(tabId).classList.add('active');
             });
+        });
+
+        // Lightbox functionality
+        const imageHeader = document.querySelector('.image-header');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxClose = document.getElementById('lightbox-close');
+        let isZoomed = false;
+
+        // Open lightbox when clicking on header image
+        imageHeader.addEventListener('click', (e) => {
+            // Don't open lightbox if clicking on nav links
+            if (e.target.tagName === 'A' || e.target.closest('a')) {
+                return;
+            }
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+
+        // Close lightbox
+        lightboxClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            lightbox.classList.remove('active');
+            lightboxImg.classList.remove('zoomed');
+            isZoomed = false;
+            document.body.style.overflow = 'auto';
+        });
+
+        // Close on background click
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+                lightbox.classList.remove('active');
+                lightboxImg.classList.remove('zoomed');
+                isZoomed = false;
+                document.body.style.overflow = 'auto';
+            }
+        });
+
+        // Zoom in/out on image click
+        lightboxImg.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isZoomed) {
+                lightboxImg.classList.remove('zoomed');
+                isZoomed = false;
+            } else {
+                lightboxImg.classList.add('zoomed');
+                isZoomed = true;
+            }
+        });
+
+        // Close lightbox with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && lightbox.classList.contains('active')) {
+                lightbox.classList.remove('active');
+                lightboxImg.classList.remove('zoomed');
+                isZoomed = false;
+                document.body.style.overflow = 'auto';
+            }
         });
     </script>
 </body>
