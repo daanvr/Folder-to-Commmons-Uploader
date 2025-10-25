@@ -2,9 +2,6 @@
 watch/*
 !watch/.gitkeep
 
-# Test files
-files/
-
 # Processed files database
 data/processed_files.json
 
