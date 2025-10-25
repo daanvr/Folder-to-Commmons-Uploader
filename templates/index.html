@@ -205,7 +205,7 @@
         {% if files %}
         <div class="files-grid">
             {% for file in files %}
-            <div class="file-card" onclick="window.location.href='/file/{{ file.path }}'">
+            <div class="file-card" onclick="window.location.href='{{ url_for('file_detail', filepath=file.path) }}'">
                 <div class="file-name">{{ file.name }}</div>
                 <div class="file-info">
                     <div class="file-info-row">
