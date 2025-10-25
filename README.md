@@ -54,6 +54,20 @@ Edit `settings.json` to configure:
 
 ## Running
 
+### Quick Start (One Command)
+
+**macOS/Linux:**
+```bash
+source venv/bin/activate && python monitor.py
+```
+
+**Windows:**
+```cmd
+venv\Scripts\activate.bat && python monitor.py
+```
+
+### Step-by-Step
+
 1. Make sure the virtual environment is activated
 2. Start the folder monitor:
    ```bash
