@@ -8,17 +8,24 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request, redirect, url_for, flash
 from PIL import Image
 from PIL.ExifTags import TAGS
 
 app = Flask(__name__)
+app.secret_key = 'dev-secret-key-change-in-production'
 
 
 def load_settings():
     """Load settings from JSON file"""
     with open('settings.json', 'r') as f:
         return json.load(f)
+
+
+def save_settings(settings):
+    """Save settings to JSON file"""
+    with open('settings.json', 'w') as f:
+        json.dump(settings, f, indent=2)
 
 
 def load_processed_files():
@@ -153,6 +160,33 @@ def api_file_detail(filepath):
         'file': file_info,
         'exif': exif_data
     })
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    """Settings page for viewing and editing configuration"""
+    if request.method == 'POST':
+        # Get form data and update settings
+        settings_data = load_settings()
+
+        settings_data['watch_folder'] = request.form.get('watch_folder', '')
+        settings_data['author'] = request.form.get('author', '')
+        settings_data['copyright'] = request.form.get('copyright', '')
+        settings_data['source'] = request.form.get('source', '')
+        settings_data['own_work'] = request.form.get('own_work') == 'on'
+
+        # Handle categories (comma-separated)
+        categories_str = request.form.get('default_categories', '')
+        settings_data['default_categories'] = [c.strip() for c in categories_str.split(',') if c.strip()]
+
+        # Save settings
+        save_settings(settings_data)
+        flash('Settings saved successfully!', 'success')
+        return redirect(url_for('settings'))
+
+    # GET request - display settings
+    settings_data = load_settings()
+    return render_template('settings.html', settings=settings_data)
 
 
 if __name__ == '__main__':
