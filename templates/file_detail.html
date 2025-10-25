@@ -279,7 +279,7 @@
 </head>
 <body>
     <div class="image-header">
-        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}">
+        <img src="{{ url_for('serve_image', filename=file.name) }}" alt="{{ file.name }}">
         <div class="image-overlay"></div>
 
         <div class="header-nav">
@@ -293,7 +293,7 @@
     <!-- Lightbox -->
     <div class="lightbox" id="lightbox">
         <span class="lightbox-close" id="lightbox-close">&times;</span>
-        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}" id="lightbox-img">
+        <img src="{{ url_for('serve_image', filename=file.name) }}" alt="{{ file.name }}" id="lightbox-img">
     </div>
 
     <div class="tabs">

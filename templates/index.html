@@ -206,8 +206,8 @@
         {% if files %}
         <div class="files-grid">
             {% for file in files %}
-            <div class="file-card" onclick="window.location.href='{{ url_for('file_detail', filepath=file.path) }}'">
-                <img src="{{ url_for('serve_thumbnail', filepath=file.path) }}" alt="{{ file.name }}" class="file-thumbnail">
+            <div class="file-card" onclick="window.location.href='{{ url_for('file_detail', filename=file.name) }}'">
+                <img src="{{ url_for('serve_thumbnail', filename=file.name) }}" alt="{{ file.name }}" class="file-thumbnail">
                 <div class="file-card-content">
                     <div class="file-name">{{ file.name }}</div>
                     <div class="file-info">
