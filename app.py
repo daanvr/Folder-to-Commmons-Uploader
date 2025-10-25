@@ -8,7 +8,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request, redirect, url_for, flash
+from flask import Flask, render_template, jsonify, request, redirect, url_for, flash, send_file
 from PIL import Image
 from PIL.ExifTags import TAGS
 
@@ -160,6 +160,47 @@ def api_file_detail(filepath):
         'file': file_info,
         'exif': exif_data
     })
+
+
+@app.route('/image/<path:filepath>')
+def serve_image(filepath):
+    """Serve image file"""
+    # Add leading slash if missing
+    if not filepath.startswith('/'):
+        filepath = '/' + filepath
+
+    path = Path(filepath)
+    if not path.exists() or not path.is_file():
+        return "Image not found", 404
+
+    return send_file(filepath, mimetype='image/jpeg')
+
+
+@app.route('/thumbnail/<path:filepath>')
+def serve_thumbnail(filepath):
+    """Serve thumbnail version of image"""
+    # Add leading slash if missing
+    if not filepath.startswith('/'):
+        filepath = '/' + filepath
+
+    path = Path(filepath)
+    if not path.exists() or not path.is_file():
+        return "Image not found", 404
+
+    # Create thumbnail
+    try:
+        img = Image.open(path)
+        img.thumbnail((300, 300))
+
+        # Save to a temporary BytesIO object
+        from io import BytesIO
+        img_io = BytesIO()
+        img.save(img_io, 'JPEG', quality=85)
+        img_io.seek(0)
+
+        return send_file(img_io, mimetype='image/jpeg')
+    except Exception as e:
+        return str(e), 500
 
 
 @app.route('/settings', methods=['GET', 'POST'])

@@ -283,8 +283,7 @@
 
             <div class="card image-preview">
                 <h2>Image Preview</h2>
-                <img src="file://{{ file.path }}" alt="{{ file.name }}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                <p style="display: none; color: #666;">Image preview not available in this view. File located at: {{ file.path }}</p>
+                <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}">
             </div>
         </div>
     </div>

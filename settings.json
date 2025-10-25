@@ -2,8 +2,8 @@
   "watch_folder": "./watch",
   "processed_files_db": "./data/processed_files.json",
   "own_work": true,
-  "copyright": "CC-BY-SA-4.0",
-  "author": "",
+  "copyright": "CC-0",
+  "author": "@Daanvr",
   "default_categories": [
     "Files uploaded with Folder-to-Commons-Uploader"
   ],
