@@ -2,21 +2,28 @@
 """
 Flask Web UI for MacOS-to-Commons-Uploader
 Displays detected files, their status, and metadata.
-Also runs a background "Commons duplicate check" worker so items never get stuck
-in "Pending Check"—even for files that already existed when the app starts.
 
-Notes
------
-- On Windows we use watchdog's PollingObserver to avoid backend issues.
-- The duplicate checker is provided by: lib/commons_duplicate_checker.py
-  and should expose:
-    - build_session() -> requests.Session
-    - check_file_on_commons(path: Path, session, check_scaled: bool, fuzzy_threshold: int) -> dict
-      (returns a dict with keys like: status, sha1_local, matches, details, checked_at)
+What this app does
+------------------
+• Watches a "watch" folder (e.g. watch/Category_Binnenhofrenovatie) for JPG/JPEG.
+• Tracks files in data/processed_files.json.
+• Background "Commons duplicate check" so items don’t stay stuck on PENDING.
+• For files NOT on Commons, suggests a Commons filename:
+    <CategorySlug>_<yyyymmdd-hhmmss><ext>
+  where CategorySlug is the part after "Category_" in the folder name.
+• Upload to Commons via /api/upload using credentials in .env.
+• Routes accept either absolute paths or filenames relative to the watch folder.
+
+Prereqs
+-------
+pip install flask pillow watchdog python-dotenv requests urllib3
 """
+
+from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import threading
 from datetime import datetime
@@ -27,6 +34,10 @@ from flask import (
     Flask, render_template, jsonify, request, redirect, url_for, flash, send_file
 )
 from PIL import Image
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from dotenv import load_dotenv
 
 # ---- watchdog: use polling on Windows to be robust ----
 if os.name == "nt":
@@ -35,52 +46,187 @@ else:
     from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-
-def extract_category_from_path(file_path, watch_folder):
-    """
-    Extract category from directory name if file is in a subdirectory starting with 'category_'.
-
-    Args:
-        file_path: Path to the file
-        watch_folder: Path to the watch folder
-
-    Returns:
-        Category name if found, None otherwise
-    """
-    file_path = Path(file_path)
-    watch_folder = Path(watch_folder)
-
-    try:
-        # Get relative path from watch folder
-        relative_path = file_path.relative_to(watch_folder)
-
-        # Check if file is in a subdirectory
-        if len(relative_path.parts) > 1:
-            # Get the immediate parent directory name
-            parent_dir = relative_path.parts[0]
-
-            # Check if it starts with 'category_' (case-insensitive)
-            if parent_dir.lower().startswith('category_'):
-                # Extract category name (everything after 'category_')
-                category_name = parent_dir[9:]  # len('category_') = 9
-                return category_name if category_name else None
-    except (ValueError, IndexError):
-        pass
-
-    return None
-
-
 # ---- Import Commons duplicate checker (optional) ----
 try:
-    from lib.commons_duplicate_checker import check_file_on_commons, build_session
+    from lib.commons_duplicate_checker import check_file_on_commons, build_session as build_checker_session
 except Exception as e:
     print("Warning: Could not import lib.commons_duplicate_checker. Duplicate checking disabled.")
     print(f"  Import error: {e}")
     check_file_on_commons = None  # type: ignore
-    build_session = None          # type: ignore
+    build_checker_session = None  # type: ignore
+
+# Load environment (.env) for Commons upload credentials
+load_dotenv()
+COMMONS_USERNAME = os.getenv("COMMONS_USERNAME", "").strip()
+COMMONS_PASSWORD = os.getenv("COMMONS_PASSWORD", "").strip()
+
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+USER_AGENT = "KB Folder-to-Commons Uploader (App UI)"
+TIMEOUT_SECS = 25
+RETRIES_TOTAL = 5
+RETRIES_BACKOFF = 0.6
 
 app = Flask(__name__)
 app.secret_key = 'dev-secret-key-change-in-production'
+
+
+# ========================
+# Utilities
+# ========================
+
+def build_requests_session() -> requests.Session:
+    s = requests.Session()
+    retry = Retry(
+        total=RETRIES_TOTAL,
+        connect=RETRIES_TOTAL,
+        read=RETRIES_TOTAL,
+        status=RETRIES_TOTAL,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET", "POST"}),
+        backoff_factor=RETRIES_BACKOFF,
+        raise_on_status=False,
+    )
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
+    return s
+
+
+def resolve_ref_to_path(ref: str, settings: dict) -> Path:
+    """
+    Accepts either:
+      - a bare filename like '20240409_173917.jpg' (resolved under watch_folder), or
+      - an absolute path like 'D:\\...\\20240409_173917.jpg' or '/Users/.../file.jpg'.
+    """
+    is_win_abs = bool(re.match(r"^[A-Za-z]:[\\/]", ref))
+    p = Path(ref)
+    if p.is_absolute() or is_win_abs:
+        return p
+    return Path(settings['watch_folder']).resolve() / ref
+
+
+def slug_from_category_folder(folder_name: str) -> str:
+    """From 'Category_Binnenhofrenovatie' -> 'Binnenhofrenovatie' (safe)."""
+    base = folder_name.strip()
+    m = re.match(r"^Category[_\s]+(.+)$", base, flags=re.IGNORECASE)
+    core = m.group(1) if m else base
+    core = core.replace(" ", "_")
+    core = re.sub(r'[<>:"/\\|?*#]', "_", core)
+    return core
+
+
+TS_PATTERN = re.compile(r"(?P<date>\d{8})[-_](?P<time>\d{6})")  # yyyymmdd-hhmmss / yyyymmdd_hhmmss
+
+def extract_timestamp_token(filename: str) -> Optional[str]:
+    m = TS_PATTERN.search(filename)
+    if not m:
+        return None
+    date = m.group("date")
+    tim = m.group("time")
+    return f"{date}-{tim}"
+
+
+def suggest_commons_filename(local_path: Path, watch_folder: Path) -> str:
+    """
+    Suggested filename: "<CategorySlug>_<yyyymmdd-hhmmss><ext>"
+    If no timestamp found, fall back to "<CategorySlug>_<stem><ext>".
+    """
+    parent = local_path.parent.name
+    slug = slug_from_category_folder(parent)
+    ts = extract_timestamp_token(local_path.name)
+    stem = local_path.stem
+    ext = local_path.suffix.lower()
+    namecore = f"{slug}_{ts}" if ts else f"{slug}_{stem}"
+    namecore = re.sub(r'[<>:"/\\|?*#]', "_", namecore)
+    return f"{namecore}{ext}"
+
+
+def wikitext_from_settings_and_category(settings: Dict[str, Any], category_slug: str) -> str:
+    """Build initial page text and categories."""
+    author = settings.get("author", "")
+    source = settings.get("source", "")
+    own_work = settings.get("own_work", True)
+    default_categories = settings.get("default_categories", []) or []
+
+    lines = [
+        "=={{int:filedesc}}==",
+        "{{Information",
+        "|description={{en|1=Uploaded via KB Folder-to-Commons Uploader}}",
+        "|date=",
+        "|source={{own}}" if own_work else f"|source={source}",
+        f"|author={author}",
+        "}}",
+        "=={{int:license-header}}==",
+        "{{self|cc-by-sa-4.0}}",
+        f"[[Category:{category_slug}]]",
+    ]
+    for c in default_categories:
+        c = str(c).strip()
+        if not c:
+            continue
+        cat_name = c.split(":", 1)[1] if c.lower().startswith("category:") else c
+        lines.append(f"[[Category:{cat_name}]]")
+    return "\n".join(lines) + "\n"
+
+
+def commons_login_and_get_csrf(session: requests.Session, username: str, password: str) -> str:
+    """Login using action=clientlogin and return a CSRF token for upload."""
+    r = session.get(COMMONS_API, params={
+        "action": "query", "meta": "tokens", "type": "login", "format": "json"
+    }, timeout=TIMEOUT_SECS)
+    r.raise_for_status()
+    login_token = r.json()["query"]["tokens"]["logintoken"]
+
+    r2 = session.post(COMMONS_API, data={
+        "action": "clientlogin", "format": "json",
+        "username": username, "password": password,
+        "loginreturnurl": "https://www.example.org/return",
+        "logintoken": login_token,
+    }, timeout=TIMEOUT_SECS)
+    r2.raise_for_status()
+    data2 = r2.json()
+    status = (data2.get("clientlogin") or {}).get("status")
+    if status != "PASS":
+        raise RuntimeError(f"Login failed: {data2}")
+
+    r3 = session.get(COMMONS_API, params={
+        "action": "query", "meta": "tokens", "type": "csrf", "format": "json"
+    }, timeout=TIMEOUT_SECS)
+    r3.raise_for_status()
+    return r3.json()["query"]["tokens"]["csrftoken"]
+
+
+def upload_to_commons(local_path: Path, target_filename: str, category_slug: str, settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Upload file to Commons with initial wikitext that includes Category:<slug>."""
+    if not COMMONS_USERNAME or not COMMONS_PASSWORD:
+        raise RuntimeError("Missing COMMONS_USERNAME/COMMONS_PASSWORD in .env")
+
+    session = build_requests_session()
+    csrf = commons_login_and_get_csrf(session, COMMONS_USERNAME, COMMONS_PASSWORD)
+
+    with local_path.open("rb") as f:
+        files = {"file": (target_filename, f, "application/octet-stream")}
+        data = {
+            "action": "upload",
+            "format": "json",
+            "filename": target_filename,          # no 'File:' prefix here
+            "comment": "Upload via KB Folder-to-Commons Uploader",
+            "text": wikitext_from_settings_and_category(settings, category_slug),
+            "token": csrf,
+            "ignorewarnings": "1",
+        }
+        r = session.post(COMMONS_API, data=data, files=files, timeout=TIMEOUT_SECS)
+        r.raise_for_status()
+        resp = r.json()
+
+    if "error" in resp:
+        return {"ok": False, "details": resp["error"]}
+
+    up = resp.get("upload", {})
+    if up.get("result") == "Success":
+        title = up.get("filename") or f"File:{target_filename}"
+        url = f"https://commons.wikimedia.org/wiki/{title.replace(' ', '_')}"
+        return {"ok": True, "title": title, "url": url, "details": up}
+    return {"ok": False, "details": resp}
 
 
 # ========================
@@ -96,12 +242,10 @@ class FileTracker:
         self.processed_files: Dict[str, Dict[str, Any]] = self._load()
 
     def _load(self) -> Dict[str, Dict[str, Any]]:
-        """Load the DB; accepts old format (list of paths) or new (dict by path)."""
         if self.db_path.exists():
             with self.db_path.open('r', encoding='utf-8') as f:
                 data = json.load(f)
             if isinstance(data, list):
-                # migrate old -> new
                 return {str(p): self._create_file_record(p) for p in data}
             if isinstance(data, dict):
                 return data
@@ -113,7 +257,6 @@ class FileTracker:
             json.dump(self.processed_files, f, indent=2)
 
     def _create_file_record(self, file_path: str, **kwargs) -> Dict[str, Any]:
-        """Create a canonical record structure for a file."""
         return {
             "file_path": str(file_path),
             "detected_at": kwargs.get("detected_at", datetime.now().isoformat()),
@@ -122,7 +265,6 @@ class FileTracker:
             "commons_matches": kwargs.get("commons_matches", []),
             "checked_at": kwargs.get("checked_at", ""),
             "check_details": kwargs.get("check_details", ""),
-            "category": kwargs.get("category", None),
         }
 
     def is_processed(self, file_path: Path) -> bool:
@@ -130,7 +272,6 @@ class FileTracker:
             return str(file_path) in self.processed_files
 
     def mark_processed(self, file_path: Path, **kwargs) -> None:
-        """Create or update a record; defaults status to PENDING for checker loop."""
         file_key = str(file_path)
         with self._lock:
             if file_key in self.processed_files:
@@ -140,7 +281,6 @@ class FileTracker:
             self._save()
 
     def update_commons_check(self, file_path: str | Path, check_result: Dict[str, Any]) -> None:
-        """Merge checker results into the record."""
         file_key = str(file_path)
         with self._lock:
             if file_key not in self.processed_files:
@@ -184,24 +324,8 @@ class NewFileHandler(FileSystemEventHandler):
             return
         if self.tracker.is_processed(file_path):
             return
-
         print(f"[NEW FILE DETECTED] {file_path.name}")
-        try:
-            size = file_path.stat().st_size
-            ctime = time.ctime(file_path.stat().st_ctime)
-            print(f"  • Full path: {file_path}")
-            print(f"  • Size: {size} bytes")
-            print(f"  • Created: {ctime}")
-        except Exception:
-            pass
-
-        # Extract category from directory path if present
-        category = extract_category_from_path(file_path, self.watch_folder)
-        if category:
-            print(f"  • Category: {category}")
-
-        # Mark as tracked (pending commons check) with category
-        self.tracker.mark_processed(file_path, commons_check_status="PENDING", category=category)
+        self.tracker.mark_processed(file_path, commons_check_status="PENDING")
         print("  • Status: Tracked; Commons check scheduled.\n")
 
 
@@ -209,31 +333,23 @@ class NewFileHandler(FileSystemEventHandler):
 # Boot helpers
 # ========================
 
-def scan_existing_files(watch_folder: Path, tracker: FileTracker, settings: Dict[str, Any]) -> None:
-    """Ensure existing JPG/JPEG files are tracked (as PENDING), including subdirectories."""
+def scan_existing_files(watch_folder: Path, tracker: FileTracker) -> None:
     watch_folder.mkdir(parents=True, exist_ok=True)
     print(f"Scanning existing files in: {watch_folder}")
-
     existing_count = 0
-    # Use rglob to scan recursively through subdirectories
-    for p in watch_folder.rglob('*'):
+    for p in watch_folder.glob('*'):
         if p.is_file() and p.suffix.lower() in ('.jpg', '.jpeg'):
             if not tracker.is_processed(p):
-                # Extract category from directory path if present
-                category = extract_category_from_path(p, watch_folder)
-                tracker.mark_processed(p, commons_check_status="PENDING", category=category)
+                tracker.mark_processed(p, commons_check_status="PENDING")
                 existing_count += 1
     if existing_count:
         print(f"Marked {existing_count} existing file(s) as pending for Commons check.\n")
 
 
 def commons_checker_loop(tracker: FileTracker, settings: Dict[str, Any], commons_session) -> None:
-    """
-    Background loop that resolves any items with status PENDING/IN_PROGRESS.
-    """
     enabled = settings.get('enable_duplicate_check', False)
     if not enabled or check_file_on_commons is None:
-        # Convert lingering PENDING → DISABLED so UI doesn't look stuck
+        # convert PENDING -> DISABLED so UI isn't stuck
         for rec in tracker.get_all_files():
             if rec.get("commons_check_status", "PENDING") == "PENDING":
                 tracker.update_commons_check(
@@ -255,7 +371,6 @@ def commons_checker_loop(tracker: FileTracker, settings: Dict[str, Any], commons
         ]
         for rec in pendings:
             fp = rec["file_path"]
-            # mark in-progress to avoid repeated picking in this cycle
             tracker.update_commons_check(fp, {
                 "status": "IN_PROGRESS",
                 "check_details": "Running Commons duplicate check…",
@@ -275,11 +390,10 @@ def commons_checker_loop(tracker: FileTracker, settings: Dict[str, Any], commons
                     "details": f"{type(e).__name__}: {e}",
                     "checked_at": datetime.now().isoformat()
                 })
-        time.sleep(2)  # polite periodic scan
+        time.sleep(2)
 
 
 def start_monitoring() -> None:
-    """Launch file observer and the background Commons checker."""
     settings = load_settings()
     watch_folder = Path(settings['watch_folder']).resolve()
     db_path = Path(settings['processed_files_db']).resolve()
@@ -300,41 +414,35 @@ def start_monitoring() -> None:
 
     tracker = FileTracker(db_path)
 
-    # Prepare Commons session if checker is enabled
     commons_session = None
-    if settings.get('enable_duplicate_check', False) and build_session is not None:
+    if settings.get('enable_duplicate_check', False) and build_checker_session is not None:
         try:
-            commons_session = build_session()
-            print("Commons API session: ready.")
+            commons_session = build_checker_session()
+            print("Commons API session (checker): ready.")
         except Exception as e:
-            print(f"Commons session init failed: {e}")
+            print(f"Commons checker session init failed: {e}")
 
-    # Track existing files (recursive scan)
-    scan_existing_files(watch_folder, tracker, settings)
+    scan_existing_files(watch_folder, tracker)
 
-    # Set up watcher for NEW files (recursive monitoring)
     event_handler = NewFileHandler(tracker, watch_folder, settings, commons_session)
     observer = Observer()
-    observer.schedule(event_handler, str(watch_folder), recursive=True)
+    observer.schedule(event_handler, str(watch_folder), recursive=False)
     try:
         observer.start()
     except Exception as e:
-        # As a last resort (very rare), downgrade to polling at runtime
         print(f"Observer start failed ({e}); falling back to PollingObserver.")
         from watchdog.observers.polling import PollingObserver
         observer = PollingObserver()
-        observer.schedule(event_handler, str(watch_folder), recursive=True)
+        observer.schedule(event_handler, str(watch_folder), recursive=False)
         observer.start()
 
-    # Start background checker for PENDING items
     threading.Thread(
         target=commons_checker_loop,
         args=(tracker, settings, commons_session),
         daemon=True
     ).start()
 
-    print("File monitoring started.")
-    print(f"Watching for new JPEG files in: {watch_folder}\n")
+    print("File monitoring started.\n")
 
 
 # ========================
@@ -349,34 +457,21 @@ def save_settings(settings: Dict[str, Any]) -> None:
     with open('settings.json', 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2)
 
-def get_file_info(file_path: str, watch_folder: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Get detailed information about a file."""
+def get_file_info(file_path: str) -> Optional[Dict[str, Any]]:
     p = Path(file_path)
     if not p.exists():
         return None
     st = p.stat()
-    info = {
+    return {
         'path': str(p),
         'name': p.name,
         'size': st.st_size,
         'size_mb': round(st.st_size / (1024 * 1024), 2),
         'created': datetime.fromtimestamp(st.st_ctime).strftime('%Y-%m-%d %H:%M:%S'),
-        'modified': datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+        'modified': datetime.fromtimestamp(st.mtime).strftime('%Y-%m-%d %H:%M:%S') if hasattr(st, "mtime") else datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
         'exists': True,
         'status': 'Detected'
     }
-
-    # Add relative path for URL generation
-    if watch_folder:
-        try:
-            rel_path = p.relative_to(watch_folder)
-            info['relative_path'] = str(rel_path)
-        except ValueError:
-            info['relative_path'] = p.name
-    else:
-        info['relative_path'] = p.name
-
-    return info
 
 
 # ========================
@@ -385,117 +480,165 @@ def get_file_info(file_path: str, watch_folder: Optional[Path] = None) -> Option
 
 @app.route('/')
 def index():
-    """Main page showing all tracked files + Commons status."""
+    """Main list with suggestions and pre-built URLs attached."""
     settings = load_settings()
-    watch_folder = Path(settings['watch_folder']).resolve()
     tracker = FileTracker(Path(settings['processed_files_db']))
     records = tracker.get_all_files()
+    watch_folder = Path(settings['watch_folder']).resolve()
 
     files_info: List[Dict[str, Any]] = []
     for rec in records:
-        info = get_file_info(rec.get('file_path', ''), watch_folder)
+        info = get_file_info(rec.get('file_path', ''))
         if not info:
             continue
-        # enrich with Commons checker fields
-        info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
+
+        # add relative path (for convenience in templates)
+        try:
+            if str(info['path']).lower().startswith(str(watch_folder).lower()):
+                info['relative_path'] = os.path.relpath(info['path'], watch_folder)
+            else:
+                info['relative_path'] = info['name']
+        except Exception:
+            info['relative_path'] = info['name']
+
+        # pre-built URLs so templates don't need to know param names
+        info['urls'] = {
+            "detail": url_for('file_detail', ref=info['path']),
+            "thumb": url_for('serve_thumbnail', ref=info['path']),
+            "image": url_for('serve_image', ref=info['path']),
+        }
+
+        status = rec.get('commons_check_status', 'PENDING')
+        info['commons_check_status'] = status
         info['commons_matches'] = rec.get('commons_matches', [])
         info['check_details'] = rec.get('check_details', '')
         info['sha1_local'] = rec.get('sha1_local', '')
-        info['category'] = rec.get('category')
+
+        if status == "NOT_ON_COMMONS":
+            local_path = Path(rec['file_path'])
+            suggested = suggest_commons_filename(local_path, watch_folder)
+            cat_slug = slug_from_category_folder(local_path.parent.name)
+            info['upload_suggestion'] = {
+                "suggested_filename": suggested,
+                "category_slug": cat_slug,
+                "post_url": url_for('api_upload')
+            }
         files_info.append(info)
 
     files_info.sort(key=lambda x: x['created'], reverse=True)
-    return render_template('index.html', files=files_info, total_files=len(files_info), settings=settings)
+    can_upload = bool(COMMONS_USERNAME and COMMONS_PASSWORD)
+
+    return render_template(
+        'index.html',
+        files=files_info,
+        total_files=len(files_info),
+        settings=settings,
+        upload_enabled=can_upload,
+        commons_username=("set" if COMMONS_USERNAME else "missing")
+    )
 
 
-@app.route('/file/<path:filename>')
-def file_detail(filename: str):
-    """Detail page for a specific file (supports subdirectories)."""
+@app.route('/file/<path:ref>')
+def file_detail(ref: str):
+    """Detail page for one file (accepts filename or absolute path)."""
     settings = load_settings()
-    watch_folder = Path(settings['watch_folder']).resolve()
+    p = resolve_ref_to_path(ref, settings)
 
-    # Support both direct filenames and paths with subdirectories
-    file_path = watch_folder / filename
-
-    file_info = get_file_info(str(file_path), watch_folder)
-    if not file_info:
+    info = get_file_info(str(p))
+    if not info:
         return "File not found", 404
 
-    # Pull checker fields
     tracker = FileTracker(Path(settings['processed_files_db']))
-    rec = tracker.get_file_record(str(file_path))
+    rec = tracker.get_file_record(str(p))
     if rec:
-        file_info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
-        file_info['commons_matches'] = rec.get('commons_matches', [])
-        file_info['check_details'] = rec.get('check_details', '')
-        file_info['sha1_local'] = rec.get('sha1_local', '')
-        file_info['category'] = rec.get('category')
+        status = rec.get('commons_check_status', 'PENDING')
+        info['commons_check_status'] = status
+        info['commons_matches'] = rec.get('commons_matches', [])
+        info['check_details'] = rec.get('check_details', '')
+        info['sha1_local'] = rec.get('sha1_local', '')
+        if status == "NOT_ON_COMMONS":
+            suggested = suggest_commons_filename(p, Path(settings['watch_folder']).resolve())
+            cat_slug = slug_from_category_folder(p.parent.name)
+            info['upload_suggestion'] = {
+                "suggested_filename": suggested,
+                "category_slug": cat_slug,
+                "post_url": url_for('api_upload')
+            }
 
-    # Minimal EXIF (safe subset)
-    exif = extract_exif_safe(str(file_path))
-    return render_template('file_detail.html', file=file_info, exif=exif, settings=settings)
+    # URLs for the detail template
+    info['urls'] = {
+        "thumb": url_for('serve_thumbnail', ref=str(p)),
+        "image": url_for('serve_image', ref=str(p)),
+    }
+
+    exif = extract_exif_safe(str(p))
+    can_upload = bool(COMMONS_USERNAME and COMMONS_PASSWORD)
+
+    return render_template('file_detail.html', file=info, exif=exif, settings=settings, upload_enabled=can_upload)
 
 
 @app.route('/api/files')
 def api_files():
-    """JSON list of tracked files."""
+    """JSON list of tracked files (with suggestions when applicable)."""
     settings = load_settings()
-    watch_folder = Path(settings['watch_folder']).resolve()
     tracker = FileTracker(Path(settings['processed_files_db']))
+    watch_folder = Path(settings['watch_folder']).resolve()
     out = []
     for rec in tracker.get_all_files():
-        info = get_file_info(rec.get('file_path', ''), watch_folder)
+        info = get_file_info(rec.get('file_path', ''))
         if not info:
             continue
-        info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
+        status = rec.get('commons_check_status', 'PENDING')
+        info['commons_check_status'] = status
         info['commons_matches'] = rec.get('commons_matches', [])
         info['check_details'] = rec.get('check_details', '')
         info['sha1_local'] = rec.get('sha1_local', '')
-        info['category'] = rec.get('category')
+        if status == "NOT_ON_COMMONS":
+            p = Path(rec['file_path'])
+            info['upload_suggestion'] = {
+                "suggested_filename": suggest_commons_filename(p, watch_folder),
+                "category_slug": slug_from_category_folder(p.parent.name),
+                "post_url": url_for('api_upload')
+            }
+        # include URLs in API too (handy for frontend JS)
+        info['urls'] = {
+            "detail": url_for('file_detail', ref=info['path']),
+            "thumb": url_for('serve_thumbnail', ref=info['path']),
+            "image": url_for('serve_image', ref=info['path']),
+        }
         out.append(info)
     return jsonify(out)
 
 
-@app.route('/api/file/<path:filename>')
-def api_file_detail(filename: str):
-    """JSON details for a single file (supports subdirectories)."""
+@app.route('/api/file/<path:ref>')
+def api_file_detail(ref: str):
+    """JSON details for a single file (accepts filename or absolute path)."""
     settings = load_settings()
-    watch_folder = Path(settings['watch_folder']).resolve()
-    p = watch_folder / filename
+    p = resolve_ref_to_path(ref, settings)
 
-    info = get_file_info(str(p), watch_folder)
+    info = get_file_info(str(p))
     if not info:
         return jsonify({"error": "File not found"}), 404
-
-    # Pull checker fields
-    tracker = FileTracker(Path(settings['processed_files_db']))
-    rec = tracker.get_file_record(str(p))
-    if rec:
-        info['commons_check_status'] = rec.get('commons_check_status', 'PENDING')
-        info['commons_matches'] = rec.get('commons_matches', [])
-        info['check_details'] = rec.get('check_details', '')
-        info['sha1_local'] = rec.get('sha1_local', '')
-        info['category'] = rec.get('category')
 
     exif = extract_exif_safe(str(p))
     return jsonify({"file": info, "exif": exif})
 
 
-@app.route('/image/<path:filename>')
-def serve_image(filename: str):
-    """Serve image file (supports subdirectories)."""
+@app.route('/image/<path:ref>')
+def serve_image(ref: str):
+    """Serve the original image bytes (accepts filename or absolute path)."""
     settings = load_settings()
-    p = Path(settings['watch_folder']).resolve() / filename
+    p = resolve_ref_to_path(ref, settings)
     if not p.exists() or not p.is_file():
         return "Image not found", 404
     return send_file(str(p), mimetype='image/jpeg')
 
 
-@app.route('/thumbnail/<path:filename>')
-def serve_thumbnail(filename: str):
-    """Serve thumbnail version of image (supports subdirectories)."""
+@app.route('/thumbnail/<path:ref>')
+def serve_thumbnail(ref: str):
+    """Serve a resized thumbnail (JPEG). Accepts filename or absolute path."""
     settings = load_settings()
-    p = Path(settings['watch_folder']).resolve() / filename
+    p = resolve_ref_to_path(ref, settings)
     if not p.exists() or not p.is_file():
         return "Image not found", 404
 
@@ -511,9 +654,66 @@ def serve_thumbnail(filename: str):
         return str(e), 500
 
 
+@app.route('/api/suggestion/<path:ref>')
+def api_suggestion(ref: str):
+    """Return JSON suggestion for a single file."""
+    settings = load_settings()
+    p = resolve_ref_to_path(ref, settings)
+    if not p.exists():
+        return jsonify({"error": "file not found"}), 404
+    return jsonify({
+        "suggested_filename": suggest_commons_filename(p, Path(settings['watch_folder']).resolve()),
+        "category_slug": slug_from_category_folder(p.parent.name)
+    })
+
+
+@app.route('/api/upload', methods=['POST'])
+def api_upload():
+    """
+    Upload endpoint.
+    Expects JSON body:
+      {
+        "filename": "local filename under watch folder OR absolute path",
+        "target": "TargetOnCommons.jpg",
+        "category_slug": "Binnenhofrenovatie"   // optional; inferred from folder if missing
+      }
+    """
+    settings = load_settings()
+    data = request.get_json(force=True, silent=True) or {}
+    local_name = data.get("filename", "")
+    target = data.get("target", "")
+    category_slug = data.get("category_slug", "")
+
+    if not local_name or not target:
+        return jsonify({"ok": False, "error": "Missing 'filename' or 'target'"}), 400
+
+    p = resolve_ref_to_path(local_name, settings)
+    if not p.exists():
+        return jsonify({"ok": False, "error": "Local file not found"}), 404
+
+    if not category_slug:
+        category_slug = slug_from_category_folder(p.parent.name)
+
+    try:
+        result = upload_to_commons(p, target, category_slug, settings)
+        if result.get("ok"):
+            tracker = FileTracker(Path(settings['processed_files_db']))
+            tracker.update_commons_check(str(p), {
+                "status": "UPLOADED",
+                "details": "Uploaded via app UI",
+                "checked_at": datetime.now().isoformat(),
+                "matches": [{"title": result.get("title", ""), "url": result.get("url", "")}]
+            })
+            return jsonify({"ok": True, "title": result.get("title"), "url": result.get("url")}), 200
+        else:
+            return jsonify({"ok": False, "error": result.get("details")}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings_view():
-    """View/update settings.json (also supports duplicate-check options)."""
+    """View/update settings.json; includes duplicate check and author/source defaults."""
     if request.method == 'POST':
         s = load_settings()
         s['watch_folder'] = request.form.get('watch_folder', s.get('watch_folder', 'watch'))
@@ -525,88 +725,19 @@ def settings_view():
             s['fuzzy_threshold'] = int(request.form.get('fuzzy_threshold', s.get('fuzzy_threshold', 10)))
         except Exception:
             s['fuzzy_threshold'] = 10
+        # Metadata defaults
+        s['author'] = request.form.get('author', s.get('author', ''))
+        s['copyright'] = request.form.get('copyright', s.get('copyright', ''))
+        s['source'] = request.form.get('source', s.get('source', ''))
+        s['own_work'] = request.form.get('own_work') == 'on'
+        cats = request.form.get('default_categories', '')
+        s['default_categories'] = [c.strip() for c in cats.split(',') if c.strip()]
 
         save_settings(s)
         flash('Settings saved.', 'success')
         return redirect(url_for('settings_view'))
 
-    return render_template('settings.html', settings=load_settings())
-
-
-# ---- Optional endpoints to kick checks from UI/JS ----
-
-@app.route('/api/commons-check/run', methods=['POST'])
-def api_run_commons_check():
-    """Process current PENDING items once (best-effort)."""
-    s = load_settings()
-    tracker = FileTracker(Path(s['processed_files_db']))
-    if not (s.get('enable_duplicate_check') and check_file_on_commons and build_session):
-        # mark pendings as DISABLED so UI isn't stuck
-        pending = [r for r in tracker.get_all_files() if r.get('commons_check_status', 'PENDING') == 'PENDING']
-        for rec in pending:
-            tracker.update_commons_check(rec['file_path'], {
-                "status": "DISABLED",
-                "details": "Duplicate checking disabled or checker unavailable.",
-                "checked_at": datetime.now().isoformat()
-            })
-        return jsonify({"processed": 0, "note": "disabled"}), 200
-
-    session = build_session()
-    processed = 0
-    for rec in tracker.get_all_files():
-        if rec.get('commons_check_status', 'PENDING') == 'PENDING':
-            try:
-                res = check_file_on_commons(
-                    Path(rec['file_path']),
-                    session=session,
-                    check_scaled=s.get('check_scaled_variants', False),
-                    fuzzy_threshold=s.get('fuzzy_threshold', 10),
-                )
-                tracker.update_commons_check(rec['file_path'], res)
-                processed += 1
-            except Exception as e:
-                tracker.update_commons_check(rec['file_path'], {
-                    "status": "ERROR",
-                    "details": f"{type(e).__name__}: {e}",
-                    "checked_at": datetime.now().isoformat()
-                })
-    return jsonify({"processed": processed}), 200
-
-
-@app.route('/api/commons-check/<path:filename>', methods=['POST'])
-def api_check_single(filename: str):
-    """Run a Commons check for a single file by filename (supports subdirectories)."""
-    s = load_settings()
-    p = Path(s['watch_folder']).resolve() / filename
-    tracker = FileTracker(Path(s['processed_files_db']))
-    if not p.exists():
-        return jsonify({"error": "file not found"}), 404
-
-    if not (s.get('enable_duplicate_check') and check_file_on_commons and build_session):
-        tracker.update_commons_check(str(p), {
-            "status": "DISABLED",
-            "details": "Duplicate checking disabled or checker unavailable.",
-            "checked_at": datetime.now().isoformat()
-        })
-        return jsonify({"status": "DISABLED"}), 200
-
-    try:
-        session = build_session()
-        res = check_file_on_commons(
-            p,
-            session=session,
-            check_scaled=s.get('check_scaled_variants', False),
-            fuzzy_threshold=s.get('fuzzy_threshold', 10),
-        )
-        tracker.update_commons_check(str(p), res)
-        return jsonify(res), 200
-    except Exception as e:
-        tracker.update_commons_check(str(p), {
-            "status": "ERROR",
-            "details": f"{type(e).__name__}: {e}",
-            "checked_at": datetime.now().isoformat()
-        })
-        return jsonify({"status": "ERROR", "details": str(e)}), 500
+    return render_template('settings.html', settings=load_settings(), upload_enabled=bool(COMMONS_USERNAME and COMMONS_PASSWORD))
 
 
 # ========================
@@ -614,7 +745,6 @@ def api_check_single(filename: str):
 # ========================
 
 def extract_exif_safe(file_path: str) -> Dict[str, Any]:
-    """Small, safe EXIF extractor for display (avoids huge/binary fields)."""
     out: Dict[str, Any] = {}
     try:
         img = Image.open(file_path)
@@ -643,10 +773,12 @@ def extract_exif_safe(file_path: str) -> Dict[str, Any]:
 # Main
 # ========================
 
+def start_monitor_thread():
+    t = threading.Thread(target=start_monitoring, daemon=True)
+    t.start()
+
 if __name__ == '__main__':
     # Start file monitoring + background checker
-    threading.Thread(target=start_monitoring, daemon=True).start()
-
-    # Start Flask app
-    # Use reloader_type="stat" to avoid watchdog-based reloader conflicts on Windows
+    start_monitor_thread()
+    # Start Flask app (stat reloader avoids watchdog reloader issues on Windows)
     app.run(debug=True, host='0.0.0.0', port=5001, use_reloader=True, reloader_type="stat")
