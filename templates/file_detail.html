@@ -18,91 +18,139 @@
             line-height: 1.6;
         }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .image-header {
             position: relative;
+            height: 400px;
+            overflow: hidden;
+            background: #000;
         }
 
-        .header h1 {
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
+        .image-header img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.85;
+        }
+
+        .image-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 100%);
+        }
+
+        .header-nav {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+        }
+
+        .back-link, .settings-link {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            transition: background 0.2s;
+            font-size: 0.95rem;
+        }
+
+        .back-link:hover, .settings-link:hover {
+            background: rgba(0,0,0,0.5);
+        }
+
+        .file-title {
+            position: absolute;
+            bottom: 2rem;
+            left: 2rem;
+            z-index: 10;
+            color: white;
+            font-size: 2rem;
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            max-width: 70%;
             word-break: break-word;
         }
 
-        .back-link {
-            color: white;
-            text-decoration: none;
-            opacity: 0.9;
-            display: inline-block;
-            margin-bottom: 1rem;
+        .tabs {
+            background: white;
+            border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
 
-        .back-link:hover {
-            opacity: 1;
+        .tab {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            font-weight: 500;
+            color: #666;
         }
 
-        .settings-link {
-            position: absolute;
-            top: 2rem;
-            right: 2rem;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            text-decoration: none;
-            font-size: 0.95rem;
-            transition: background 0.2s;
+        .tab:hover {
+            color: #667eea;
+            background: #f9f9f9;
         }
 
-        .settings-link:hover {
-            background: rgba(255,255,255,0.3);
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
         }
 
         .container {
             max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 1rem;
+            margin: 0 auto;
+            padding: 2rem;
         }
 
-        .content-grid {
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .info-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
         }
 
-        @media (max-width: 768px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .card {
+        .info-card {
             background: white;
             border-radius: 12px;
             padding: 1.5rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.08);
         }
 
-        .card h2 {
-            font-size: 1.3rem;
-            margin-bottom: 1rem;
+        .info-card h3 {
+            font-size: 1.1rem;
             color: #667eea;
-            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-        }
-
-        .info-table {
-            width: 100%;
+            border-bottom: 2px solid #f0f0f0;
         }
 
         .info-row {
             display: flex;
             justify-content: space-between;
             padding: 0.75rem 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid #f5f5f5;
         }
 
         .info-row:last-child {
@@ -112,8 +160,6 @@
         .info-label {
             font-weight: 600;
             color: #666;
-            flex-shrink: 0;
-            margin-right: 1rem;
         }
 
         .info-value {
@@ -132,10 +178,6 @@
             color: white;
         }
 
-        .exif-section {
-            grid-column: 1 / -1;
-        }
-
         .exif-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -143,9 +185,10 @@
         }
 
         .exif-item {
-            padding: 0.75rem;
-            background: #f9f9f9;
+            padding: 1rem;
+            background: white;
             border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
 
         .exif-key {
@@ -157,68 +200,43 @@
 
         .exif-value {
             color: #333;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             word-break: break-word;
-        }
-
-        .image-preview {
-            grid-column: 1 / -1;
-        }
-
-        .image-preview img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        }
-
-        .metadata-section {
-            grid-column: 1 / -1;
-        }
-
-        .metadata-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-        }
-
-        .metadata-item {
-            padding: 1rem;
-            background: #f9f9f9;
-            border-radius: 8px;
-        }
-
-        .metadata-label {
-            font-weight: 600;
-            color: #667eea;
-            font-size: 0.9rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .metadata-value {
-            color: #333;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <a href="/settings" class="settings-link">⚙️ Settings</a>
-        <a href="/" class="back-link">← Back to File List</a>
-        <h1>{{ file.name }}</h1>
+    <div class="image-header">
+        <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}">
+        <div class="image-overlay"></div>
+
+        <div class="header-nav">
+            <a href="/" class="back-link">← Back to Files</a>
+            <a href="/settings" class="settings-link">⚙️ Settings</a>
+        </div>
+
+        <h1 class="file-title">{{ file.name }}</h1>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="file-info">File Info</div>
+        <div class="tab" data-tab="metadata">Upload Metadata</div>
+        <div class="tab" data-tab="exif">EXIF Data</div>
     </div>
 
     <div class="container">
-        <div class="content-grid">
-            <div class="card">
-                <h2>File Information</h2>
-                <div class="info-table">
+        <!-- File Info Tab -->
+        <div class="tab-content active" id="file-info">
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>File Details</h3>
                     <div class="info-row">
                         <span class="info-label">File Name:</span>
                         <span class="info-value">{{ file.name }}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">File Size:</span>
-                        <span class="info-value">{{ file.size_mb }} MB ({{ file.size }} bytes)</span>
+                        <span class="info-value">{{ file.size_mb }} MB</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">Created:</span>
@@ -232,60 +250,85 @@
                         <span class="info-label">Status:</span>
                         <span class="info-value"><span class="status-badge">{{ file.status }}</span></span>
                     </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>Location</h3>
                     <div class="info-row">
                         <span class="info-label">Full Path:</span>
                         <span class="info-value">{{ file.path }}</span>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <div class="card metadata-section">
-                <h2>Upload Metadata (from settings)</h2>
-                <div class="metadata-grid">
-                    <div class="metadata-item">
-                        <div class="metadata-label">Copyright</div>
-                        <div class="metadata-value">{{ settings.copyright }}</div>
+        <!-- Upload Metadata Tab -->
+        <div class="tab-content" id="metadata">
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>Default Upload Settings</h3>
+                    <div class="info-row">
+                        <span class="info-label">Copyright:</span>
+                        <span class="info-value">{{ settings.copyright }}</span>
                     </div>
-                    <div class="metadata-item">
-                        <div class="metadata-label">Source</div>
-                        <div class="metadata-value">{{ settings.source }}</div>
+                    <div class="info-row">
+                        <span class="info-label">Source:</span>
+                        <span class="info-value">{{ settings.source }}</span>
                     </div>
-                    <div class="metadata-item">
-                        <div class="metadata-label">Author</div>
-                        <div class="metadata-value">{{ settings.author if settings.author else 'Not set' }}</div>
+                    <div class="info-row">
+                        <span class="info-label">Author:</span>
+                        <span class="info-value">{{ settings.author if settings.author else 'Not set' }}</span>
                     </div>
-                    <div class="metadata-item">
-                        <div class="metadata-label">Own Work</div>
-                        <div class="metadata-value">{{ 'Yes' if settings.own_work else 'No' }}</div>
+                    <div class="info-row">
+                        <span class="info-label">Own Work:</span>
+                        <span class="info-value">{{ 'Yes' if settings.own_work else 'No' }}</span>
                     </div>
-                    <div class="metadata-item">
-                        <div class="metadata-label">Default Categories</div>
-                        <div class="metadata-value">{{ settings.default_categories | join(', ') }}</div>
+                    <div class="info-row">
+                        <span class="info-label">Default Categories:</span>
+                        <span class="info-value">{{ settings.default_categories | join(', ') }}</span>
                     </div>
                 </div>
-            </div>
-
-            <div class="card exif-section">
-                <h2>EXIF Data</h2>
-                {% if exif.error %}
-                <p>Error reading EXIF data: {{ exif.error }}</p>
-                {% else %}
-                <div class="exif-grid">
-                    {% for key, value in exif.items() %}
-                    <div class="exif-item">
-                        <div class="exif-key">{{ key }}</div>
-                        <div class="exif-value">{{ value }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
-
-            <div class="card image-preview">
-                <h2>Image Preview</h2>
-                <img src="{{ url_for('serve_image', filepath=file.path) }}" alt="{{ file.name }}">
             </div>
         </div>
+
+        <!-- EXIF Data Tab -->
+        <div class="tab-content" id="exif">
+            {% if exif.error %}
+            <div class="info-card">
+                <p>Error reading EXIF data: {{ exif.error }}</p>
+            </div>
+            {% else %}
+            <div class="exif-grid">
+                {% for key, value in exif.items() %}
+                <div class="exif-item">
+                    <div class="exif-key">{{ key }}</div>
+                    <div class="exif-value">{{ value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
     </div>
+
+    <script>
+        // Tab switching
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(tc => tc.classList.remove('active'));
+
+                // Add active class to clicked tab
+                tab.classList.add('active');
+
+                // Show corresponding content
+                const tabId = tab.getAttribute('data-tab');
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+    </script>
 </body>
 </html>
