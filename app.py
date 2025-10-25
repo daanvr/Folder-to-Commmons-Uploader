@@ -221,7 +221,7 @@ class NewFileHandler(FileSystemEventHandler):
         print(f"  - Status: Tracked for upload\n")
 
 
-def scan_existing_files(watch_folder, tracker):
+def scan_existing_files(watch_folder, tracker, settings, commons_session=None):
     """Scan and track existing files in the watch folder"""
     watch_path = Path(watch_folder)
     if not watch_path.exists():
@@ -231,6 +231,7 @@ def scan_existing_files(watch_folder, tracker):
 
     print(f"Scanning existing files in: {watch_path}")
     existing_count = 0
+    duplicate_check_enabled = settings.get('enable_duplicate_check', False) and check_file_on_commons
 
     # Scan files in root and subdirectories (recursive)
     for file_path in watch_path.rglob('*'):
@@ -240,6 +241,29 @@ def scan_existing_files(watch_folder, tracker):
                 category = extract_category_from_path(file_path, watch_folder)
                 tracker.mark_processed(file_path, category=category)
                 existing_count += 1
+
+                # Check for duplicates on Commons if enabled
+                if duplicate_check_enabled:
+                    print(f"Checking {file_path.name} for duplicates...")
+                    try:
+                        check_result = check_file_on_commons(
+                            file_path,
+                            session=commons_session,
+                            check_scaled=settings.get('check_scaled_variants', False),
+                            fuzzy_threshold=settings.get('fuzzy_threshold', 10)
+                        )
+                        tracker.update_commons_check(file_path, check_result)
+
+                        # Display brief result
+                        status = check_result.get('status', 'ERROR')
+                        if status == 'EXACT_MATCH':
+                            print(f"  ⚠️  DUPLICATE")
+                        elif status == 'NOT_ON_COMMONS':
+                            print(f"  ✓ Safe to upload")
+                        else:
+                            print(f"  {status}")
+                    except Exception as e:
+                        print(f"  Error: {e}")
 
     if existing_count > 0:
         print(f"Marked {existing_count} existing file(s) as already present\n")
@@ -278,7 +302,7 @@ def start_monitoring():
         commons_session = build_session()
 
     # Scan existing files
-    scan_existing_files(watch_folder, tracker)
+    scan_existing_files(watch_folder, tracker, settings, commons_session)
 
     # Set up file system observer
     event_handler = NewFileHandler(tracker, watch_folder, settings, commons_session)
