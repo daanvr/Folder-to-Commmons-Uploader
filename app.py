@@ -39,6 +39,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from html import unescape
 
+CONNECT_TIMEOUT = 25
+READ_TIMEOUT = 240
+API_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
 # ---- watchdog: use polling on Windows to be robust ----
 if os.name == "nt":
     from watchdog.observers.polling import PollingObserver as Observer
@@ -88,6 +92,31 @@ app.secret_key = 'dev-secret-key-change-in-production'
 # ========================
 # Utilities
 # ========================
+
+def login_with_botpassword(session: requests.Session, username: str, password: str) -> None:
+    """
+    Login using legacy action=login (recommended for BotPasswords).
+    Raises on failure.
+    """
+    print("[UPLOAD] (fallback) Getting login token for action=login…")
+    r = session.get(COMMONS_API, params={
+        "action": "query", "meta": "tokens", "type": "login", "format": "json"
+    }, timeout=API_TIMEOUT)
+    r.raise_for_status()
+    login_token = r.json()["query"]["tokens"]["logintoken"]
+
+    print("[UPLOAD] (fallback) action=login …")
+    r2 = session.post(COMMONS_API, data={
+        "action": "login", "format": "json",
+        "lgname": username, "lgpassword": password, "lgtoken": login_token,
+    }, timeout=API_TIMEOUT)
+    r2.raise_for_status()
+    data2 = r2.json()
+    status = (data2.get("login") or {}).get("result")
+    print(f"[UPLOAD] (fallback) login result = {status}")
+    if status != "Success":
+        raise RuntimeError(f"BotPassword login failed: {json.dumps(data2, ensure_ascii=False)}")
+
 
 def build_requests_session(user_agent: str | None = None) -> requests.Session:
     s = requests.Session()
@@ -186,36 +215,64 @@ def wikitext_from_settings_and_category(settings: Dict[str, Any], category_slug:
 
 
 def commons_login_and_get_csrf(session: requests.Session, username: str, password: str) -> str:
-    print("[UPLOAD] Getting login token…")
-    r = session.get(COMMONS_API, params={
-        "action": "query", "meta": "tokens", "type": "login", "format": "json"
-    }, timeout=API_TIMEOUT)
-    r.raise_for_status()
-    login_token = r.json()["query"]["tokens"]["logintoken"]
+    """
+    Try clientlogin first (works for non-2FA accounts).
+    If that fails (e.g., 2FA or wrong flow), fall back to action=login (BotPassword).
+    Returns a CSRF token on success.
+    """
+    # First attempt: clientlogin
+    try:
+        print("[UPLOAD] Getting login token (clientlogin)…")
+        r = session.get(COMMONS_API, params={
+            "action": "query", "meta": "tokens", "type": "login", "format": "json"
+        }, timeout=API_TIMEOUT)
+        r.raise_for_status()
+        login_token = r.json()["query"]["tokens"]["logintoken"]
 
-    print("[UPLOAD] clientlogin…")
-    r2 = session.post(COMMONS_API, data={
-        "action": "clientlogin", "format": "json",
-        "username": username, "password": password,
-        "loginreturnurl": "https://www.example.org/return",
-        "logintoken": login_token,
-    }, timeout=API_TIMEOUT)
-    r2.raise_for_status()
-    data2 = r2.json()
-    status = (data2.get("clientlogin") or {}).get("status")
-    print(f"[UPLOAD] clientlogin status = {status}")
-    if status != "PASS":
-        raise RuntimeError(f"Login failed: {json.dumps(data2, ensure_ascii=False)}")
+        print(f"[UPLOAD] clientlogin as {username!r} …")
+        r2 = session.post(COMMONS_API, data={
+            "action": "clientlogin", "format": "json",
+            "username": username, "password": password,
+            "loginreturnurl": "https://commons.wikimedia.org/wiki/Special:BlankPage",
+            "logintoken": login_token,
+        }, timeout=API_TIMEOUT)
+        r2.raise_for_status()
+        data2 = r2.json()
+        status = (data2.get("clientlogin") or {}).get("status")
+        print(f"[UPLOAD] clientlogin status = {status}")
 
-    print("[UPLOAD] Getting CSRF token…")
-    r3 = session.get(COMMONS_API, params={
+        if status == "PASS":
+            # get CSRF
+            print("[UPLOAD] Getting CSRF token…")
+            r3 = session.get(COMMONS_API, params={
+                "action": "query", "meta": "tokens", "type": "csrf", "format": "json"
+            }, timeout=API_TIMEOUT)
+            r3.raise_for_status()
+            csrf = r3.json()["query"]["tokens"]["csrftoken"]
+            if not csrf or csrf == "+\\":
+                raise RuntimeError("Empty CSRF token")
+            return csrf
+
+        # If clientlogin FAILED (e.g., wrongpassword, 2FA), try BotPassword flow next.
+        print(f"[UPLOAD] clientlogin failed ({status}). Falling back to action=login (BotPassword).")
+
+    except Exception as e:
+        print(f"[UPLOAD] clientlogin exception: {e}. Will try action=login (BotPassword).")
+
+    # Fallback: BotPassword (action=login)
+    login_with_botpassword(session, username, password)
+
+    # After login, fetch CSRF token
+    print("[UPLOAD] (fallback) Getting CSRF token…")
+    r4 = session.get(COMMONS_API, params={
         "action": "query", "meta": "tokens", "type": "csrf", "format": "json"
     }, timeout=API_TIMEOUT)
-    r3.raise_for_status()
-    csrf = r3.json()["query"]["tokens"]["csrftoken"]
+    r4.raise_for_status()
+    csrf = r4.json()["query"]["tokens"]["csrftoken"]
     if not csrf or csrf == "+\\":
-        raise RuntimeError("Empty CSRF token")
+        raise RuntimeError("Empty CSRF token after fallback login")
     return csrf
+
 
 
 
